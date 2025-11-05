@@ -1,7 +1,12 @@
-import yahooFinance from 'yahoo-finance2';
+import finnhub from 'finnhub';
 import { db } from '@/lib/db';
 import { priceCandles, stocks } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+
+// Finnhub API 설정
+const api_key = finnhub.ApiClient.instance.authentications['api_key'];
+api_key.apiKey = process.env.FINNHUB_API_KEY || '';
+const finnhubClient = new finnhub.DefaultApi();
 
 export interface CandleData {
   timestamp: Date;
@@ -22,24 +27,39 @@ export interface StockQuote {
 }
 
 /**
- * Yahoo Finance에서 실시간 주가 데이터 가져오기
+ * Finnhub API를 Promise로 래핑하는 헬퍼 함수
+ */
+function promisify<T>(fn: (callback: (error: any, data: T, response: any) => void) => void): Promise<T> {
+  return new Promise((resolve, reject) => {
+    fn((error, data, response) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve(data);
+      }
+    });
+  });
+}
+
+/**
+ * Finnhub에서 실시간 주가 데이터 가져오기
  */
 export async function fetchStockQuote(symbol: string): Promise<StockQuote | null> {
   try {
-    const quote = await yahooFinance.quote(symbol);
+    const quote = await promisify<any>((cb) => finnhubClient.quote(symbol, cb));
 
-    if (!quote) {
+    if (!quote || quote.c === 0) {
       console.error(`No quote data for ${symbol}`);
       return null;
     }
 
     return {
-      symbol: (quote as any).symbol || symbol,
-      price: (quote as any).regularMarketPrice || 0,
-      change: (quote as any).regularMarketChange || 0,
-      changePercent: (quote as any).regularMarketChangePercent || 0,
-      volume: (quote as any).regularMarketVolume || 0,
-      marketCap: (quote as any).marketCap,
+      symbol: symbol,
+      price: quote.c, // current price
+      change: quote.d, // change
+      changePercent: quote.dp, // percent change
+      volume: 0, // Finnhub quote doesn't include volume
+      marketCap: undefined,
     };
   } catch (error) {
     console.error(`Error fetching quote for ${symbol}:`, error);
@@ -48,7 +68,7 @@ export async function fetchStockQuote(symbol: string): Promise<StockQuote | null
 }
 
 /**
- * Yahoo Finance에서 과거 캔들 데이터 가져오기
+ * Finnhub에서 과거 캔들 데이터 가져오기
  */
 export async function fetchHistoricalData(
   symbol: string,
@@ -57,27 +77,41 @@ export async function fetchHistoricalData(
   interval: '1m' | '5m' | '15m' | '1h' | '1d' = '5m'
 ): Promise<CandleData[]> {
   try {
-    const result = await yahooFinance.chart(symbol, {
-      period1,
-      period2,
-      interval,
-    });
+    // Finnhub interval mapping
+    const resolutionMap: { [key: string]: string } = {
+      '1m': '1',
+      '5m': '5',
+      '15m': '15',
+      '1h': '60',
+      '1d': 'D',
+    };
 
-    if (!result || !result.quotes) {
+    const resolution = resolutionMap[interval] || '5';
+    const from = Math.floor(period1.getTime() / 1000);
+    const to = Math.floor(period2.getTime() / 1000);
+
+    const result = await promisify<any>((cb) =>
+      finnhubClient.stockCandles(symbol, resolution, from, to, cb)
+    );
+
+    if (!result || result.s === 'no_data' || !result.t || result.t.length === 0) {
       console.error(`No historical data for ${symbol}`);
       return [];
     }
 
-    return result.quotes
-      .filter((q: any) => q.open && q.high && q.low && q.close && q.volume)
-      .map((quote: any) => ({
-        timestamp: quote.date,
-        open: quote.open!,
-        high: quote.high!,
-        low: quote.low!,
-        close: quote.close!,
-        volume: quote.volume!,
-      }));
+    const candles: CandleData[] = [];
+    for (let i = 0; i < result.t.length; i++) {
+      candles.push({
+        timestamp: new Date(result.t[i] * 1000),
+        open: result.o[i],
+        high: result.h[i],
+        low: result.l[i],
+        close: result.c[i],
+        volume: result.v[i],
+      });
+    }
+
+    return candles;
   } catch (error) {
     console.error(`Error fetching historical data for ${symbol}:`, error);
     return [];
@@ -99,20 +133,17 @@ export async function saveCandleData(
     });
 
     if (!stock) {
-      // 주식 정보가 없으면 Yahoo Finance에서 가져와서 생성
-      const quote = await yahooFinance.quote(symbol);
-      if (!quote) {
-        throw new Error(`Cannot fetch stock info for ${symbol}`);
-      }
+      // 주식 정보가 없으면 Finnhub에서 가져와서 생성
+      const profile = await promisify<any>((cb) => finnhubClient.companyProfile2({ symbol }, cb));
 
       const [newStock] = await db
         .insert(stocks)
         .values({
           symbol: symbol,
-          name: quote.shortName || quote.longName || symbol,
-          market: quote.market || 'UNKNOWN',
-          currency: quote.currency || 'USD',
-          exchange: quote.fullExchangeName || quote.exchange || 'UNKNOWN',
+          name: profile?.name || symbol,
+          market: profile?.exchange || 'UNKNOWN',
+          currency: profile?.currency || 'USD',
+          exchange: profile?.exchange || 'UNKNOWN',
         })
         .returning();
 
@@ -163,11 +194,11 @@ export async function collectRealTimeData(
 
     switch (timeframe) {
       case '1m':
-        // 1분봉: 최근 1일 데이터 (시장 마감 시에도 데이터 확보)
+        // 1분봉: 최근 1일 데이터 (Finnhub 무료는 1분봉 제한적)
         period1 = new Date(period2.getTime() - 24 * 60 * 60 * 1000);
         break;
       case '5m':
-        // 5분봉: 최근 5일 데이터 (주말 포함하여 충분한 데이터 확보)
+        // 5분봉: 최근 5일 데이터
         period1 = new Date(period2.getTime() - 5 * 24 * 60 * 60 * 1000);
         break;
       case '15m':
@@ -221,9 +252,9 @@ export async function collectMultipleStocks(
  */
 export async function upsertStock(symbol: string): Promise<void> {
   try {
-    const quote = await yahooFinance.quote(symbol);
+    const profile = await promisify<any>((cb) => finnhubClient.companyProfile2({ symbol }, cb));
 
-    if (!quote) {
+    if (!profile || !profile.name) {
       throw new Error(`Cannot fetch stock info for ${symbol}`);
     }
 
@@ -237,10 +268,10 @@ export async function upsertStock(symbol: string): Promise<void> {
       await db
         .update(stocks)
         .set({
-          name: quote.shortName || quote.longName || symbol,
-          market: quote.market || 'UNKNOWN',
-          currency: quote.currency || 'USD',
-          exchange: quote.fullExchangeName || quote.exchange || 'UNKNOWN',
+          name: profile.name || symbol,
+          market: profile.exchange || 'UNKNOWN',
+          currency: profile.currency || 'USD',
+          exchange: profile.exchange || 'UNKNOWN',
           updatedAt: new Date(),
         })
         .where(eq(stocks.id, existingStock.id));
@@ -250,10 +281,10 @@ export async function upsertStock(symbol: string): Promise<void> {
       // 생성
       await db.insert(stocks).values({
         symbol: symbol,
-        name: quote.shortName || quote.longName || symbol,
-        market: quote.market || 'UNKNOWN',
-        currency: quote.currency || 'USD',
-        exchange: quote.fullExchangeName || quote.exchange || 'UNKNOWN',
+        name: profile.name || symbol,
+        market: profile.exchange || 'UNKNOWN',
+        currency: profile.currency || 'USD',
+        exchange: profile.exchange || 'UNKNOWN',
       });
 
       console.log(`✅ Created stock info for ${symbol}`);
