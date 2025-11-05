@@ -180,6 +180,122 @@ export const priceTargets = pgTable("price_targets", {
 }));
 
 // ============================================
+// 뉴스 및 정보 수집
+// ============================================
+
+// 뉴스 소스 (사이트 정보)
+export const newsSources = pgTable("news_sources", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(), // 사이트 이름
+  url: varchar("url", { length: 500 }).notNull(),
+  category: varchar("category", { length: 50 }).notNull(), // 'disclosure', 'news', 'report', 'research'
+  subcategory: varchar("subcategory", { length: 100 }), // '공시', '뉴스', '리포트', '리서치'
+
+  // 수집 방법
+  collectionMethod: varchar("collection_method", { length: 50 }).notNull(), // 'rss', 'api', 'scraping'
+  rssUrl: varchar("rss_url", { length: 500 }), // RSS 피드 URL
+  apiEndpoint: varchar("api_endpoint", { length: 500 }), // API 엔드포인트
+  apiKey: varchar("api_key", { length: 255 }), // API 키 (암호화 필요)
+
+  // 수집 설정
+  isActive: boolean("is_active").default(true),
+  collectionFrequency: varchar("collection_frequency", { length: 20 }).default("daily"), // 'realtime', 'hourly', 'daily'
+  lastCollectedAt: timestamp("last_collected_at"),
+
+  // 메타데이터
+  language: varchar("language", { length: 10 }).default("ko"), // 'ko', 'en'
+  country: varchar("country", { length: 10 }).default("KR"), // 'KR', 'US'
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  nameIdx: index("news_source_name_idx").on(table.name),
+  categoryIdx: index("news_source_category_idx").on(table.category),
+}));
+
+// 뉴스 기사
+export const newsArticles = pgTable("news_articles", {
+  id: serial("id").primaryKey(),
+  sourceId: integer("source_id").notNull().references(() => newsSources.id),
+
+  // 기사 정보
+  title: varchar("title", { length: 500 }).notNull(),
+  content: text("content"),
+  summary: text("summary"), // AI 요약
+  url: varchar("url", { length: 1000 }).notNull().unique(),
+
+  // 메타데이터
+  author: varchar("author", { length: 255 }),
+  publishedAt: timestamp("published_at").notNull(),
+  category: varchar("category", { length: 100 }), // 기사 카테고리
+  tags: json("tags"), // 태그 배열
+
+  // AI 분석
+  sentiment: varchar("sentiment", { length: 20 }), // 'positive', 'negative', 'neutral'
+  sentimentScore: decimal("sentiment_score", { precision: 5, scale: 2 }), // -100 ~ +100
+  importance: integer("importance").default(0), // 중요도 (0-10)
+
+  // 종목 관련성 (복수 종목 가능)
+  mentionedStocks: json("mentioned_stocks"), // [{symbol, relevance}]
+
+  // 콘텐츠 해시 (중복 체크용)
+  contentHash: varchar("content_hash", { length: 64 }),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  sourcePublishedIdx: index("news_source_published_idx").on(table.sourceId, table.publishedAt),
+  publishedIdx: index("news_published_idx").on(table.publishedAt),
+  sentimentIdx: index("news_sentiment_idx").on(table.sentiment),
+  contentHashIdx: uniqueIndex("news_content_hash_idx").on(table.contentHash),
+}));
+
+// 종목-뉴스 연관성
+export const stockNewsRelations = pgTable("stock_news_relations", {
+  id: serial("id").primaryKey(),
+  stockId: integer("stock_id").notNull().references(() => stocks.id),
+  newsArticleId: integer("news_article_id").notNull().references(() => newsArticles.id),
+
+  // 연관성 분석
+  relevanceScore: decimal("relevance_score", { precision: 5, scale: 2 }).notNull(), // 0-100
+  mentionType: varchar("mention_type", { length: 50 }), // 'direct', 'related', 'sector', 'competitor'
+
+  // AI 분석
+  impact: varchar("impact", { length: 20 }), // 'positive', 'negative', 'neutral'
+  impactScore: decimal("impact_score", { precision: 5, scale: 2 }), // -100 ~ +100
+
+  // 주요 언급 내용
+  excerpt: text("excerpt"), // 해당 종목이 언급된 부분
+  keywords: json("keywords"), // 관련 키워드 배열
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  stockNewsIdx: uniqueIndex("stock_news_idx").on(table.stockId, table.newsArticleId),
+  stockRelevanceIdx: index("stock_relevance_idx").on(table.stockId, table.relevanceScore),
+}));
+
+// 뉴스 수집 로그
+export const newsCollectionLogs = pgTable("news_collection_logs", {
+  id: serial("id").primaryKey(),
+  sourceId: integer("source_id").notNull().references(() => newsSources.id),
+
+  status: varchar("status", { length: 20 }).notNull(), // 'success', 'failed', 'partial'
+  articlesCollected: integer("articles_collected").default(0),
+  articlesNew: integer("articles_new").default(0), // 신규 기사 수
+  articlesDuplicate: integer("articles_duplicate").default(0), // 중복 기사 수
+
+  errorMessage: text("error_message"),
+  duration: integer("duration"), // 수집 소요 시간 (ms)
+
+  startedAt: timestamp("started_at").notNull(),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  sourceStatusIdx: index("collection_source_status_idx").on(table.sourceId, table.status),
+  startedAtIdx: index("collection_started_idx").on(table.startedAt),
+}));
+
+// ============================================
 // 감시 및 알림
 // ============================================
 
@@ -284,6 +400,7 @@ export const stocksRelations = relations(stocks, ({ many }) => ({
   priceTargets: many(priceTargets),
   watchlist: many(watchlist),
   alerts: many(alerts),
+  stockNewsRelations: many(stockNewsRelations),
 }));
 
 export const priceCandlesRelations = relations(priceCandles, ({ one }) => ({
@@ -382,5 +499,37 @@ export const holdingsRelations = relations(holdings, ({ one }) => ({
   stock: one(stocks, {
     fields: [holdings.stockId],
     references: [stocks.id],
+  }),
+}));
+
+// 뉴스 관련 Relations
+export const newsSourcesRelations = relations(newsSources, ({ many }) => ({
+  newsArticles: many(newsArticles),
+  collectionLogs: many(newsCollectionLogs),
+}));
+
+export const newsArticlesRelations = relations(newsArticles, ({ one, many }) => ({
+  source: one(newsSources, {
+    fields: [newsArticles.sourceId],
+    references: [newsSources.id],
+  }),
+  stockRelations: many(stockNewsRelations),
+}));
+
+export const stockNewsRelationsRelations = relations(stockNewsRelations, ({ one }) => ({
+  stock: one(stocks, {
+    fields: [stockNewsRelations.stockId],
+    references: [stocks.id],
+  }),
+  newsArticle: one(newsArticles, {
+    fields: [stockNewsRelations.newsArticleId],
+    references: [newsArticles.id],
+  }),
+}));
+
+export const newsCollectionLogsRelations = relations(newsCollectionLogs, ({ one }) => ({
+  source: one(newsSources, {
+    fields: [newsCollectionLogs.sourceId],
+    references: [newsSources.id],
   }),
 }));
