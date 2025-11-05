@@ -10,7 +10,10 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "seed:news": "dotenv -e .env.local -- tsx lib/scripts/seed-news-sources.ts",
+    "seed:strategies": "dotenv -e .env.local -- tsx lib/scripts/seed-trading-strategies.ts",
+    "seed:all": "npm run seed:news && npm run seed:strategies"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
@@ -37,6 +40,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv-cli": "^11.0.0",
     "drizzle-kit": "^0.31.6",
     "eslint": "^9",
     "eslint-config-next": "16.0.1",
