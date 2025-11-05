@@ -66,32 +66,44 @@ export const US_STOCK_NAMES: Record<string, string> = {
 
 /**
  * 주식 이름 또는 심볼을 정규화된 심볼로 변환
+ * @param input - 주식 이름 또는 심볼
+ * @param removeExchange - .KS, .KQ 같은 거래소 접미사 제거 여부 (기본값: true)
  */
-export function normalizeStockSymbol(input: string): string {
+export function normalizeStockSymbol(input: string, removeExchange: boolean = true): string {
   const trimmed = input.trim();
 
   // 이미 심볼 형태인지 확인 (대문자로)
   const upperInput = trimmed.toUpperCase();
 
-  // 1. 이미 올바른 심볼 형태인 경우 (예: AAPL, 005930.KS)
-  if (/^[A-Z]{1,5}$/.test(upperInput) || /^\d{6}\.(KS|KQ)$/.test(upperInput)) {
+  // 1. 한국 주식 코드 형태인 경우 (예: 005930.KS, 005930)
+  if (/^\d{6}(\.(KS|KQ))?$/.test(upperInput)) {
+    // .KS, .KQ 제거 (데이터베이스에는 접미사 없이 저장)
+    if (removeExchange) {
+      return upperInput.replace(/\.(KS|KQ)$/, '');
+    }
+    // .KS/.KQ가 없으면 그대로 반환
+    if (!/\.(KS|KQ)$/.test(upperInput)) {
+      return upperInput;
+    }
     return upperInput;
   }
 
-  // 2. 한국 주식 이름 검색
-  if (KOREAN_STOCK_NAMES[trimmed]) {
-    return KOREAN_STOCK_NAMES[trimmed];
+  // 2. 이미 올바른 미국 주식 심볼 형태인 경우 (예: AAPL)
+  if (/^[A-Z]{1,5}$/.test(upperInput)) {
+    return upperInput;
   }
 
-  // 3. 미국 주식 이름 검색 (대소문자 무시)
+  // 3. 한국 주식 이름 검색
+  if (KOREAN_STOCK_NAMES[trimmed]) {
+    const symbol = KOREAN_STOCK_NAMES[trimmed];
+    // .KS, .KQ 제거
+    return removeExchange ? symbol.replace(/\.(KS|KQ)$/, '') : symbol;
+  }
+
+  // 4. 미국 주식 이름 검색 (대소문자 무시)
   const usSymbol = US_STOCK_NAMES[trimmed];
   if (usSymbol) {
     return usSymbol;
-  }
-
-  // 4. 한국 주식 코드만 입력된 경우 (예: 005930)
-  if (/^\d{6}$/.test(trimmed)) {
-    return `${trimmed}.KS`; // 기본값 KOSPI
   }
 
   // 5. 그대로 반환 (대문자로)
