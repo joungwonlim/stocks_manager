@@ -34,12 +34,12 @@ export async function fetchStockQuote(symbol: string): Promise<StockQuote | null
     }
 
     return {
-      symbol: quote.symbol,
-      price: quote.regularMarketPrice || 0,
-      change: quote.regularMarketChange || 0,
-      changePercent: quote.regularMarketChangePercent || 0,
-      volume: quote.regularMarketVolume || 0,
-      marketCap: quote.marketCap,
+      symbol: (quote as any).symbol || symbol,
+      price: (quote as any).regularMarketPrice || 0,
+      change: (quote as any).regularMarketChange || 0,
+      changePercent: (quote as any).regularMarketChangePercent || 0,
+      volume: (quote as any).regularMarketVolume || 0,
+      marketCap: (quote as any).marketCap,
     };
   } catch (error) {
     console.error(`Error fetching quote for ${symbol}:`, error);
@@ -69,8 +69,8 @@ export async function fetchHistoricalData(
     }
 
     return result.quotes
-      .filter((q) => q.open && q.high && q.low && q.close && q.volume)
-      .map((quote) => ({
+      .filter((q: any) => q.open && q.high && q.low && q.close && q.volume)
+      .map((quote: any) => ({
         timestamp: quote.date,
         open: quote.open!,
         high: quote.high!,
