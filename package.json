@@ -13,7 +13,8 @@
     "db:studio": "drizzle-kit studio",
     "seed:news": "dotenv -e .env.local -- npx tsx lib/scripts/seed-news-sources.ts",
     "seed:strategies": "dotenv -e .env.local -- npx tsx lib/scripts/seed-trading-strategies.ts",
-    "seed:all": "npm run seed:news && npm run seed:strategies"
+    "seed:mock": "dotenv -e .env.local -- npx tsx lib/scripts/seed-mock-stocks.ts",
+    "seed:all": "npm run seed:news && npm run seed:strategies && npm run seed:mock"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
