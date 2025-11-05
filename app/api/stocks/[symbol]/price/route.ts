@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { fetchStockQuote, collectRealTimeData } from '@/lib/services/stock-price-service';
+// import { fetchStockQuote, collectRealTimeData } from '@/lib/services/stock-price-service'; // 비활성화 - 속도 개선
 import { db } from '@/lib/db';
 import { priceCandles, stocks } from '@/lib/db/schema';
 import { eq, desc, and } from 'drizzle-orm';
@@ -26,18 +26,17 @@ export async function GET(
     const limit = parseInt(searchParams.get('limit') || '100');
     const shouldCollect = searchParams.get('collect') === 'true';
 
-    // 1. 실시간 데이터 수집 (옵션)
-    if (shouldCollect) {
-      try {
-        await collectRealTimeData(symbol.toUpperCase(), timeframe as any);
-      } catch (error) {
-        console.error('Error collecting data:', error);
-        // 수집 실패해도 계속 진행 (DB에 기존 데이터가 있을 수 있음)
-      }
-    }
+    // 1. 실시간 데이터 수집 (비활성화 - 외부 API 크롤링 실패로 인한 지연 방지)
+    // if (shouldCollect) {
+    //   try {
+    //     await collectRealTimeData(symbol.toUpperCase(), timeframe as any);
+    //   } catch (error) {
+    //     console.error('Error collecting data:', error);
+    //   }
+    // }
 
-    // 2. 현재 가격 조회
-    const currentQuote = await fetchStockQuote(symbol.toUpperCase());
+    // 2. 현재 가격 조회 (비활성화 - DB 데이터 사용으로 속도 개선)
+    // const currentQuote = await fetchStockQuote(symbol.toUpperCase());
 
     // 3. 주식 정보 조회
     const stock = await db.query.stocks.findFirst({
@@ -61,6 +60,11 @@ export async function GET(
       limit: limit,
     });
 
+    // 5. 현재가는 DB의 최신 캔들 종가 사용 (외부 API 대신)
+    const currentPrice = candles.length > 0
+      ? parseFloat(candles[0].close)
+      : null;
+
     return NextResponse.json({
       stock: {
         id: stock.id,
@@ -70,7 +74,7 @@ export async function GET(
         currency: stock.currency,
         exchange: stock.exchange,
       },
-      currentPrice: currentQuote,
+      currentPrice: currentPrice,
       candles: candles.map((c) => ({
         timestamp: c.timestamp,
         open: parseFloat(c.open),
