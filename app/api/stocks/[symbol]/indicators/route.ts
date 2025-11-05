@@ -19,10 +19,10 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { symbol: string } }
+  { params }: { params: Promise<{ symbol: string }> }
 ) {
   try {
-    const { symbol } = params;
+    const { symbol } = await params;
     const searchParams = request.nextUrl.searchParams;
     const timeframe = searchParams.get('timeframe') || '5m';
     const limit = parseInt(searchParams.get('limit') || '100');
@@ -87,10 +87,10 @@ export async function GET(
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { symbol: string } }
+  { params }: { params: Promise<{ symbol: string }> }
 ) {
   try {
-    const { symbol } = params;
+    const { symbol } = await params;
     const body = await request.json();
     const { timeframe = '5m' } = body;
 
