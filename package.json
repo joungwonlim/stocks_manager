@@ -11,8 +11,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "seed:news": "dotenv -e .env.local -- tsx lib/scripts/seed-news-sources.ts",
-    "seed:strategies": "dotenv -e .env.local -- tsx lib/scripts/seed-trading-strategies.ts",
+    "seed:news": "dotenv -e .env.local -- npx tsx lib/scripts/seed-news-sources.ts",
+    "seed:strategies": "dotenv -e .env.local -- npx tsx lib/scripts/seed-trading-strategies.ts",
     "seed:all": "npm run seed:news && npm run seed:strategies"
   },
   "dependencies": {
