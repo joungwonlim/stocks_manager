@@ -12,10 +12,12 @@ import { resolve } from 'path';
 // .env.local 파일 로드
 config({ path: resolve(__dirname, '.env.local') });
 
-import alphaVantageService from './lib/services/alpha-vantage-service';
-
 async function testAlphaVantage() {
+  // 동적 import로 환경변수 로드 후 service 로드
+  const { default: alphaVantageService } = await import('./lib/services/alpha-vantage-service');
+
   console.log('🔍 Testing Alpha Vantage API...\n');
+  console.log('Environment API Key:', process.env.ALPHA_VANTAGE_API_KEY ? 'Found' : 'Not found');
 
   // API 키 확인
   const stats = alphaVantageService.getStats();
