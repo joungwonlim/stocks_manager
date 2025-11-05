@@ -4,6 +4,12 @@
  * news-sources-config.ts의 데이터를 데이터베이스에 삽입합니다.
  */
 
+import dotenv from 'dotenv';
+import path from 'path';
+
+// .env.local 파일 로드
+dotenv.config({ path: path.join(process.cwd(), '.env.local') });
+
 import { db } from '@/lib/db';
 import { newsSources } from '@/lib/db/schema';
 import { NEWS_SOURCES } from '@/lib/data/news-sources-config';
