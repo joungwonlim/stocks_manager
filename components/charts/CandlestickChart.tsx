@@ -1,8 +1,17 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { createChart, ColorType } from 'lightweight-charts';
-import type { IChartApi, ISeriesApi } from 'lightweight-charts';
+import {
+  ComposedChart,
+  Line,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  ReferenceLine,
+} from 'recharts';
 
 interface CandleData {
   time: string;
@@ -19,144 +28,145 @@ interface CandlestickChartProps {
 }
 
 export default function CandlestickChart({ data, height = 400, volumeData }: CandlestickChartProps) {
-  const chartContainerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const candleSeriesRef = useRef<any>(null);
-  const volumeSeriesRef = useRef<any>(null);
-
-  useEffect(() => {
-    if (!chartContainerRef.current) return;
-
-    // 차트 생성
-    const chart = createChart(chartContainerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: '#ffffff' },
-        textColor: '#333',
-      },
-      grid: {
-        vertLines: { color: '#f0f0f0' },
-        horzLines: { color: '#f0f0f0' },
-      },
-      width: chartContainerRef.current.clientWidth,
-      height: height,
-      timeScale: {
-        timeVisible: true,
-        secondsVisible: false,
-        borderColor: '#D1D4DC',
-      },
-      rightPriceScale: {
-        borderColor: '#D1D4DC',
-      },
-      crosshair: {
-        vertLine: {
-          color: '#9598A1',
-          width: 1,
-          style: 1,
-          labelBackgroundColor: '#4682B4',
-        },
-        horzLine: {
-          color: '#9598A1',
-          width: 1,
-          style: 1,
-          labelBackgroundColor: '#4682B4',
-        },
-      },
-    });
-
-    chartRef.current = chart;
-
-    // 캔들스틱 시리즈 추가 (v5 API)
-    const candleSeries = (chart as any).addCandlestickSeries?.({
-      upColor: '#ef5350',
-      downColor: '#26a69a',
-      borderUpColor: '#ef5350',
-      borderDownColor: '#26a69a',
-      wickUpColor: '#ef5350',
-      wickDownColor: '#26a69a',
-    }) || (chart as any).addSeries?.('Candlestick', {
-      upColor: '#ef5350',
-      downColor: '#26a69a',
-      borderUpColor: '#ef5350',
-      borderDownColor: '#26a69a',
-      wickUpColor: '#ef5350',
-      wickDownColor: '#26a69a',
-    });
-
-    candleSeriesRef.current = candleSeries;
-
-    // 데이터 포맷 변환 (ISO string → Unix timestamp)
-    const formattedData = data.map((d) => ({
-      time: new Date(d.time).getTime() / 1000,
-      open: d.open,
+  // 데이터 변환
+  const chartData = data.map((d, idx) => {
+    const volumeItem = volumeData?.[idx];
+    return {
+      time: new Date(d.time).toLocaleString('ko-KR', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
       high: d.high,
       low: d.low,
+      open: d.open,
       close: d.close,
-    }));
-
-    candleSeries.setData(formattedData);
-
-    // 거래량 차트 추가 (옵션) (v5 API)
-    if (volumeData && volumeData.length > 0) {
-      const volumeSeries = (chart as any).addHistogramSeries?.({
-        color: '#26a69a',
-        priceFormat: {
-          type: 'volume',
-        },
-        priceScaleId: '',
-        scaleMargins: {
-          top: 0.8,
-          bottom: 0,
-        },
-      }) || (chart as any).addSeries?.('Histogram', {
-        color: '#26a69a',
-        priceFormat: {
-          type: 'volume',
-        },
-        priceScaleId: '',
-        scaleMargins: {
-          top: 0.8,
-          bottom: 0,
-        },
-      });
-
-      volumeSeriesRef.current = volumeSeries;
-
-      const formattedVolumeData = volumeData.map((v) => ({
-        time: new Date(v.time).getTime() / 1000,
-        value: v.value,
-        color: v.color || '#26a69a',
-      }));
-
-      volumeSeries.setData(formattedVolumeData);
-    }
-
-    // 차트를 데이터에 맞게 자동 피팅
-    chart.timeScale().fitContent();
-
-    // 윈도우 리사이즈 핸들러
-    const handleResize = () => {
-      if (chartContainerRef.current && chartRef.current) {
-        chartRef.current.applyOptions({
-          width: chartContainerRef.current.clientWidth,
-        });
-      }
+      volume: volumeItem?.value || 0,
+      // 캔들 색상 결정 (상승/하락)
+      isUp: d.close >= d.open,
     };
+  });
 
-    window.addEventListener('resize', handleResize);
+  // 커스텀 캔들 렌더링
+  const CustomCandlestick = (props: any) => {
+    const { x, y, width, height, high, low, open, close, isUp } = props;
+    const color = isUp ? '#ef5350' : '#26a69a';
 
-    // 클린업
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (chartRef.current) {
-        chartRef.current.remove();
-        chartRef.current = null;
-      }
-    };
-  }, [data, height, volumeData]);
+    // 가격 범위 계산
+    const chartHeight = 400;
+    const priceRange = Math.max(...data.map(d => d.high)) - Math.min(...data.map(d => d.low));
+    const scale = chartHeight / priceRange;
+
+    return (
+      <g>
+        {/* 심지 (High-Low) */}
+        <line
+          x1={x + width / 2}
+          y1={y}
+          x2={x + width / 2}
+          y2={y + height}
+          stroke={color}
+          strokeWidth={1}
+        />
+        {/* 몸통 (Open-Close) */}
+        <rect
+          x={x}
+          y={Math.min(y, y + height * ((open - close) / (high - low)))}
+          width={width}
+          height={Math.abs(height * ((close - open) / (high - low))) || 1}
+          fill={color}
+          stroke={color}
+        />
+      </g>
+    );
+  };
 
   return (
-    <div className="relative">
-      <div ref={chartContainerRef} className="rounded-lg border border-zinc-200" />
+    <div className="w-full">
+      <ResponsiveContainer width="100%" height={height}>
+        <ComposedChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis
+            dataKey="time"
+            stroke="#999"
+            tick={{ fontSize: 11 }}
+            angle={-45}
+            textAnchor="end"
+            height={80}
+          />
+          <YAxis
+            yAxisId="price"
+            stroke="#999"
+            tick={{ fontSize: 11 }}
+            domain={['dataMin - 1000', 'dataMax + 1000']}
+          />
+          <YAxis
+            yAxisId="volume"
+            orientation="right"
+            stroke="#999"
+            tick={{ fontSize: 11 }}
+            domain={[0, 'dataMax * 1.5']}
+          />
+          <Tooltip
+            contentStyle={{
+              backgroundColor: 'rgba(255, 255, 255, 0.95)',
+              border: '1px solid #ccc',
+              borderRadius: '4px',
+              fontSize: '12px',
+            }}
+            formatter={(value: any, name: string) => {
+              if (name === 'volume') return [value.toLocaleString(), '거래량'];
+              return [value.toLocaleString(), name];
+            }}
+          />
+          <Legend wrapperStyle={{ fontSize: '12px' }} />
+
+          {/* High-Low 라인 */}
+          <Line
+            yAxisId="price"
+            type="monotone"
+            dataKey="high"
+            stroke="#999"
+            strokeWidth={1}
+            dot={false}
+            name="고가"
+            strokeDasharray="3 3"
+          />
+          <Line
+            yAxisId="price"
+            type="monotone"
+            dataKey="low"
+            stroke="#999"
+            strokeWidth={1}
+            dot={false}
+            name="저가"
+            strokeDasharray="3 3"
+          />
+
+          {/* 종가 라인 */}
+          <Line
+            yAxisId="price"
+            type="monotone"
+            dataKey="close"
+            stroke="#4f46e5"
+            strokeWidth={2}
+            dot={false}
+            name="종가"
+          />
+
+          {/* 거래량 */}
+          {volumeData && volumeData.length > 0 && (
+            <Bar
+              yAxisId="volume"
+              dataKey="volume"
+              fill="#26a69a"
+              opacity={0.3}
+              name="거래량"
+            />
+          )}
+        </ComposedChart>
+      </ResponsiveContainer>
     </div>
   );
 }
