@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { createChart, ColorType, IChartApi, ISeriesApi } from 'lightweight-charts';
+import { createChart, ColorType } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 
 interface CandleData {
   time: string;
@@ -20,8 +21,8 @@ interface CandlestickChartProps {
 export default function CandlestickChart({ data, height = 400, volumeData }: CandlestickChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const candleSeriesRef = useRef<any>(null);
+  const volumeSeriesRef = useRef<any>(null);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -64,8 +65,15 @@ export default function CandlestickChart({ data, height = 400, volumeData }: Can
 
     chartRef.current = chart;
 
-    // 캔들스틱 시리즈 추가
-    const candleSeries = chart.addCandlestickSeries({
+    // 캔들스틱 시리즈 추가 (v5 API)
+    const candleSeries = (chart as any).addCandlestickSeries?.({
+      upColor: '#ef5350',
+      downColor: '#26a69a',
+      borderUpColor: '#ef5350',
+      borderDownColor: '#26a69a',
+      wickUpColor: '#ef5350',
+      wickDownColor: '#26a69a',
+    }) || (chart as any).addSeries?.('Candlestick', {
       upColor: '#ef5350',
       downColor: '#26a69a',
       borderUpColor: '#ef5350',
@@ -87,9 +95,19 @@ export default function CandlestickChart({ data, height = 400, volumeData }: Can
 
     candleSeries.setData(formattedData);
 
-    // 거래량 차트 추가 (옵션)
+    // 거래량 차트 추가 (옵션) (v5 API)
     if (volumeData && volumeData.length > 0) {
-      const volumeSeries = chart.addHistogramSeries({
+      const volumeSeries = (chart as any).addHistogramSeries?.({
+        color: '#26a69a',
+        priceFormat: {
+          type: 'volume',
+        },
+        priceScaleId: '',
+        scaleMargins: {
+          top: 0.8,
+          bottom: 0,
+        },
+      }) || (chart as any).addSeries?.('Histogram', {
         color: '#26a69a',
         priceFormat: {
           type: 'volume',
