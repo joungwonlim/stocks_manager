@@ -157,9 +157,30 @@ export async function collectRealTimeData(
   try {
     console.log(`🔄 Collecting ${timeframe} data for ${symbol}...`);
 
-    // 최근 1시간 데이터 가져오기 (1분봉, 5분봉용)
+    // 타임프레임에 따라 적절한 기간 설정
     const period2 = new Date();
-    const period1 = new Date(period2.getTime() - 60 * 60 * 1000); // 1시간 전
+    let period1: Date;
+
+    switch (timeframe) {
+      case '1m':
+        // 1분봉: 최근 1일 데이터 (시장 마감 시에도 데이터 확보)
+        period1 = new Date(period2.getTime() - 24 * 60 * 60 * 1000);
+        break;
+      case '5m':
+        // 5분봉: 최근 5일 데이터 (주말 포함하여 충분한 데이터 확보)
+        period1 = new Date(period2.getTime() - 5 * 24 * 60 * 60 * 1000);
+        break;
+      case '15m':
+        // 15분봉: 최근 7일 데이터
+        period1 = new Date(period2.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case '1h':
+        // 1시간봉: 최근 30일 데이터
+        period1 = new Date(period2.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      default:
+        period1 = new Date(period2.getTime() - 5 * 24 * 60 * 60 * 1000);
+    }
 
     const candles = await fetchHistoricalData(symbol, period1, period2, timeframe);
 
@@ -168,6 +189,7 @@ export async function collectRealTimeData(
       return;
     }
 
+    console.log(`📊 Received ${candles.length} candles for ${symbol}`);
     await saveCandleData(symbol, timeframe, candles);
   } catch (error) {
     console.error(`❌ Error collecting data for ${symbol}:`, error);
