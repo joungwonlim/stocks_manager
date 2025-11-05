@@ -118,6 +118,58 @@ export default function TestApiPage() {
     }
   };
 
+  // 5. 기술적 지표 계산
+  const calculateIndicators = async () => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const res = await fetch(`/api/stocks/${symbol}/indicators?timeframe=${timeframe}&calculate=true&analyze=true`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to calculate');
+      }
+
+      setResult(data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 6. 여러 종목 지표 계산
+  const calculateMultipleIndicators = async () => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const res = await fetch('/api/indicators/calculate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbols: ['AAPL', 'MSFT', 'GOOGL', '005930.KS'],
+          timeframe,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to calculate');
+      }
+
+      setResult(data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-8">
       <div className="max-w-6xl mx-auto space-y-8">
@@ -172,8 +224,8 @@ export default function TestApiPage() {
         {/* 테스트 버튼들 */}
         <Card>
           <CardHeader>
-            <CardTitle>테스트 실행</CardTitle>
-            <CardDescription>각 API를 테스트해보세요</CardDescription>
+            <CardTitle>1️⃣ 주가 데이터 수집</CardTitle>
+            <CardDescription>실시간 주가 캔들 데이터 수집</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -210,6 +262,34 @@ export default function TestApiPage() {
                 className="w-full"
               >
                 4. 스케줄러 즉시 실행
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 기술적 지표 테스트 버튼들 */}
+        <Card>
+          <CardHeader>
+            <CardTitle>2️⃣ 기술적 지표 계산</CardTitle>
+            <CardDescription>RSI, MACD, 볼린저 밴드 등 계산 및 분석</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <Button
+                onClick={calculateIndicators}
+                disabled={loading}
+                className="w-full bg-green-600 hover:bg-green-700"
+              >
+                5. 지표 계산 ({symbol})
+              </Button>
+
+              <Button
+                onClick={calculateMultipleIndicators}
+                disabled={loading}
+                variant="secondary"
+                className="w-full"
+              >
+                6. 여러 종목 지표 계산 (4개)
               </Button>
             </div>
 
@@ -262,6 +342,89 @@ export default function TestApiPage() {
                       <p className="text-zinc-600">거래량</p>
                       <p className="text-lg font-bold">{result.currentPrice.volume.toLocaleString()}</p>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {result.analysis && (
+                <div className="mb-4 p-4 bg-yellow-50 rounded-lg">
+                  <h3 className="font-semibold mb-2">📈 기술적 분석</h3>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">시장 심리:</span>
+                      <span className={`px-2 py-1 rounded ${
+                        result.analysis.sentiment === 'bullish'
+                          ? 'bg-green-100 text-green-700'
+                          : result.analysis.sentiment === 'bearish'
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-gray-100 text-gray-700'
+                      }`}>
+                        {result.analysis.sentiment === 'bullish' ? '🔥 강세' : result.analysis.sentiment === 'bearish' ? '❄️ 약세' : '➡️ 중립'}
+                      </span>
+                      <span className="text-sm text-zinc-600">신뢰도: {result.analysis.strength}%</span>
+                    </div>
+                    {result.analysis.signals && result.analysis.signals.length > 0 && (
+                      <div>
+                        <p className="font-medium mb-1">신호:</p>
+                        <ul className="text-sm space-y-1">
+                          {result.analysis.signals.map((signal: string, i: number) => (
+                            <li key={i} className="text-zinc-700">• {signal}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {result.latest && result.latest.rsi14 && (
+                <div className="mb-4 p-4 bg-purple-50 rounded-lg">
+                  <h3 className="font-semibold mb-2">📊 최신 지표 값</h3>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    {result.latest.rsi14 && (
+                      <div>
+                        <p className="text-zinc-600">RSI(14)</p>
+                        <p className={`text-lg font-bold ${
+                          result.latest.rsi14 > 70 ? 'text-red-600' : result.latest.rsi14 < 30 ? 'text-green-600' : 'text-zinc-900'
+                        }`}>
+                          {result.latest.rsi14.toFixed(2)}
+                        </p>
+                      </div>
+                    )}
+                    {result.latest.macd && (
+                      <div>
+                        <p className="text-zinc-600">MACD</p>
+                        <p className="text-lg font-bold">{result.latest.macd.toFixed(4)}</p>
+                      </div>
+                    )}
+                    {result.latest.sma20 && (
+                      <div>
+                        <p className="text-zinc-600">SMA(20)</p>
+                        <p className="text-lg font-bold">{result.latest.sma20.toFixed(2)}</p>
+                      </div>
+                    )}
+                    {result.latest.bbUpper && (
+                      <div>
+                        <p className="text-zinc-600">볼린저 상단</p>
+                        <p className="text-lg font-bold">{result.latest.bbUpper.toFixed(2)}</p>
+                      </div>
+                    )}
+                    {result.latest.bbLower && (
+                      <div>
+                        <p className="text-zinc-600">볼린저 하단</p>
+                        <p className="text-lg font-bold">{result.latest.bbLower.toFixed(2)}</p>
+                      </div>
+                    )}
+                    {result.latest.stochK && (
+                      <div>
+                        <p className="text-zinc-600">Stochastic K</p>
+                        <p className={`text-lg font-bold ${
+                          result.latest.stochK > 80 ? 'text-red-600' : result.latest.stochK < 20 ? 'text-green-600' : 'text-zinc-900'
+                        }`}>
+                          {result.latest.stochK.toFixed(2)}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
