@@ -5,8 +5,14 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { TrendingUp, TrendingDown, DollarSign, Activity, Plus, Search, CheckCircle2, XCircle, Loader2, Sparkles, Target, AlertCircle, Bell } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Activity, Plus, Search, CheckCircle2, XCircle, Loader2, Sparkles, Target, AlertCircle, Bell, BarChart3 } from "lucide-react";
 import { normalizeStockSymbol } from '@/lib/utils/stock-symbol-mapper';
+import dynamic from 'next/dynamic';
+
+// 차트 컴포넌트를 동적 import (SSR 방지)
+const CandlestickChart = dynamic(() => import('@/components/charts/CandlestickChart'), { ssr: false });
+const TechnicalIndicatorChart = dynamic(() => import('@/components/charts/TechnicalIndicatorChart'), { ssr: false });
+const PortfolioChart = dynamic(() => import('@/components/charts/PortfolioChart'), { ssr: false });
 
 export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -17,6 +23,7 @@ export default function DashboardPage() {
   const [alerts, setAlerts] = useState<any[]>([]);
   const [alertLoading, setAlertLoading] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const [chartData, setChartData] = useState<any>(null);
 
   // 샘플 데이터
   const portfolioStats = {
@@ -29,6 +36,31 @@ export default function DashboardPage() {
   const recentStocks = [
     { symbol: "005930", name: "삼성전자", quantity: 50, avgPrice: 71000, currentPrice: 75000, profit: 200000, profitRate: 5.63 },
     { symbol: "035420", name: "NAVER", quantity: 10, avgPrice: 245000, currentPrice: 268000, profit: 230000, profitRate: 9.39 },
+  ];
+
+  // 포트폴리오 차트 샘플 데이터
+  const portfolioPerformanceData = [
+    { date: '11/01', value: 12500000, invested: 12000000 },
+    { date: '11/02', value: 13200000, invested: 12000000 },
+    { date: '11/03', value: 14100000, invested: 12000000 },
+    { date: '11/04', value: 14800000, invested: 12000000 },
+    { date: '11/05', value: 15420000, invested: 12000000 },
+  ];
+
+  const stockAllocationData = [
+    { name: '삼성전자', value: 3750000, percentage: 24.3 },
+    { name: 'NAVER', value: 2680000, percentage: 17.4 },
+    { name: 'SK하이닉스', value: 3200000, percentage: 20.8 },
+    { name: 'LG화학', value: 2890000, percentage: 18.7 },
+    { name: '카카오', value: 2900000, percentage: 18.8 },
+  ];
+
+  const stockProfitData = [
+    { name: '삼성전자', value: 200000 },
+    { name: 'NAVER', value: 230000 },
+    { name: 'SK하이닉스', value: -150000 },
+    { name: 'LG화학', value: 320000 },
+    { name: '카카오', value: -100000 },
   ];
 
   // AI 분석 실행
@@ -98,7 +130,38 @@ export default function DashboardPage() {
       console.log('🤖 Step 3: AI 분석 중...');
       await handleAIAnalyze(symbol);
 
-      // 4. 결과 표시
+      // 4. 차트 데이터 준비
+      const candleChartData = priceData.candles?.map((c: any) => ({
+        time: c.timestamp,
+        open: parseFloat(c.open),
+        high: parseFloat(c.high),
+        low: parseFloat(c.low),
+        close: parseFloat(c.close),
+      })) || [];
+
+      const volumeChartData = priceData.candles?.map((c: any) => ({
+        time: c.timestamp,
+        value: parseFloat(c.volume),
+        color: parseFloat(c.close) >= parseFloat(c.open) ? '#ef5350' : '#26a69a',
+      })) || [];
+
+      const indicatorChartData = indicatorsData.indicators?.map((ind: any) => ({
+        timestamp: ind.timestamp,
+        rsi: parseFloat(ind.rsi14),
+        macd: parseFloat(ind.macd),
+        macdSignal: parseFloat(ind.macdSignal),
+        macdHistogram: parseFloat(ind.macdHistogram),
+        stochK: parseFloat(ind.stochK),
+        stochD: parseFloat(ind.stochD),
+      })) || [];
+
+      setChartData({
+        candles: candleChartData.slice(-100), // 최근 100개
+        volume: volumeChartData.slice(-100),
+        indicators: indicatorChartData.slice(-100),
+      });
+
+      // 5. 결과 표시
       setAnalysisResult({
         symbol: symbol,
         stock: priceData.stock,
@@ -595,8 +658,110 @@ export default function DashboardPage() {
                     </CardContent>
                   </Card>
                 )}
+
+                {/* 차트 섹션 */}
+                {chartData && (
+                  <div className="space-y-6">
+                    {/* 가격 차트 */}
+                    <Card className="border-blue-200">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <BarChart3 className="h-5 w-5 text-blue-600" />
+                          {analysisResult?.stock?.name} 주가 차트
+                        </CardTitle>
+                        <CardDescription>
+                          캔들스틱 차트 및 거래량 (최근 100개 데이터)
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <CandlestickChart
+                          data={chartData.candles}
+                          height={400}
+                          volumeData={chartData.volume}
+                        />
+                      </CardContent>
+                    </Card>
+
+                    {/* 기술적 지표 차트 */}
+                    <Card className="border-purple-200">
+                      <CardHeader>
+                        <CardTitle>📈 기술적 지표 차트</CardTitle>
+                        <CardDescription>
+                          RSI, MACD, Stochastic 지표를 시각화한 차트
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-8">
+                          {/* RSI 차트 */}
+                          <TechnicalIndicatorChart
+                            data={chartData.indicators}
+                            type="rsi"
+                            height={200}
+                          />
+
+                          {/* MACD 차트 */}
+                          <TechnicalIndicatorChart
+                            data={chartData.indicators}
+                            type="macd"
+                            height={200}
+                          />
+
+                          {/* Stochastic 차트 */}
+                          <TechnicalIndicatorChart
+                            data={chartData.indicators}
+                            type="stochastic"
+                            height={200}
+                          />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* 포트폴리오 차트 */}
+        <Card className="mb-8 border-indigo-200">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-indigo-600" />
+              포트폴리오 분석
+            </CardTitle>
+            <CardDescription>
+              자산 배분, 수익률, 종목별 손익을 한눈에 확인
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* 포트폴리오 수익률 추이 */}
+              <div>
+                <PortfolioChart
+                  type="performance"
+                  performanceData={portfolioPerformanceData}
+                  height={300}
+                />
+              </div>
+
+              {/* 자산 배분 */}
+              <div>
+                <PortfolioChart
+                  type="allocation"
+                  allocationData={stockAllocationData}
+                  height={300}
+                />
+              </div>
+
+              {/* 종목별 수익/손실 */}
+              <div className="md:col-span-2">
+                <PortfolioChart
+                  type="profit"
+                  allocationData={stockProfitData}
+                  height={300}
+                />
+              </div>
+            </div>
           </CardContent>
         </Card>
 
