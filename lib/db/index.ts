@@ -1,10 +1,13 @@
-import { drizzle } from "drizzle-orm/neon-http";
-import { neon } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import Database from "better-sqlite3";
 import * as schema from "./schema";
+import path from "path";
 
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL is not set");
-}
+// SQLite 데이터베이스 파일 경로
+const dbPath = process.env.DATABASE_PATH || path.join(process.cwd(), "sqlite.db");
 
-const sql = neon(process.env.DATABASE_URL);
-export const db = drizzle(sql, { schema });
+// SQLite 연결
+const sqlite = new Database(dbPath);
+sqlite.pragma("journal_mode = WAL"); // Write-Ahead Logging for better performance
+
+export const db = drizzle(sqlite, { schema });
