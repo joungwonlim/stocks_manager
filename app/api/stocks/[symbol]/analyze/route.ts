@@ -149,38 +149,51 @@ ${candleInputs.slice(-10).map((c, i) =>
 
     // 6. Claude AI 호출 (환경변수 없으면 Mock 응답)
     let aiResponse;
+    let usingMockAI = false;
 
     const hasValidApiKey = process.env.ANTHROPIC_API_KEY &&
                           process.env.ANTHROPIC_API_KEY !== 'your_api_key_here' &&
                           process.env.ANTHROPIC_API_KEY.startsWith('sk-');
 
     if (hasValidApiKey) {
-      const anthropic = new Anthropic({
-        apiKey: process.env.ANTHROPIC_API_KEY,
-      });
+      try {
+        const anthropic = new Anthropic({
+          apiKey: process.env.ANTHROPIC_API_KEY,
+        });
 
-      const message = await anthropic.messages.create({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 2000,
-        messages: [
-          {
-            role: 'user',
-            content: analysisPrompt,
-          },
-        ],
-      });
+        const message = await anthropic.messages.create({
+          model: 'claude-3-5-sonnet-20241022',
+          max_tokens: 2000,
+          messages: [
+            {
+              role: 'user',
+              content: analysisPrompt,
+            },
+          ],
+        });
 
-      const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
+        const responseText = message.content[0].type === 'text' ? message.content[0].text : '';
 
-      // JSON 추출
-      const jsonMatch = responseText.match(/\`\`\`json\n([\s\S]*?)\n\`\`\`/);
-      if (jsonMatch) {
-        aiResponse = JSON.parse(jsonMatch[1]);
-      } else {
-        // JSON 형식이 없으면 전체를 파싱 시도
-        aiResponse = JSON.parse(responseText);
+        // JSON 추출
+        const jsonMatch = responseText.match(/\`\`\`json\n([\s\S]*?)\n\`\`\`/);
+        if (jsonMatch) {
+          aiResponse = JSON.parse(jsonMatch[1]);
+        } else {
+          // JSON 형식이 없으면 전체를 파싱 시도
+          aiResponse = JSON.parse(responseText);
+        }
+      } catch (error: any) {
+        // API 크레딧 부족이나 다른 API 에러 시 Mock 응답으로 fallback
+        console.warn('⚠️  AI API error, using mock analysis:', error.message);
+        usingMockAI = true;
       }
-    } else {
+    }
+
+    // API 키 없거나 API 호출 실패 시 Mock AI 응답
+    if (!hasValidApiKey || usingMockAI) {
+      if (!hasValidApiKey) {
+        console.log('ℹ️  No valid API key, using mock AI analysis');
+      }
       // Mock AI 응답 (API 키 없을 때)
       const rsi = parseFloat(latestIndicator.rsi14 || '50');
       const macdHistogram = parseFloat(latestIndicator.macdHistogram || '0');
@@ -264,6 +277,7 @@ ${candleInputs.slice(-10).map((c, i) =>
     // 9. 응답 반환
     return NextResponse.json({
       success: true,
+      usingMockAI: !hasValidApiKey || usingMockAI,
       stock: {
         symbol: stock.symbol,
         name: stock.name,
