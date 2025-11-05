@@ -3,6 +3,7 @@ import * as cheerio from 'cheerio';
 import { db } from '@/lib/db';
 import { priceCandles, stocks } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import naverFinanceScraper from './naver-finance-scraper';
 
 export interface CandleData {
   timestamp: Date;
@@ -15,10 +16,14 @@ export interface CandleData {
 
 export interface StockQuote {
   symbol: string;
+  name?: string;
   price: number;
   change: number;
   changePercent: number;
   volume: number;
+  open?: number;
+  high?: number;
+  low?: number;
   marketCap?: number;
 }
 
@@ -37,45 +42,24 @@ function toKoreanCode(symbol: string): string {
 }
 
 /**
- * 네이버 금융에서 실시간 시세 크롤링
+ * 네이버 금융에서 실시간 시세 크롤링 (Puppeteer 사용)
  */
 async function fetchNaverQuote(code: string): Promise<StockQuote | null> {
   try {
-    const url = `https://finance.naver.com/item/main.naver?code=${code}`;
-    const response = await axios.get(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      },
-    });
+    console.log(`📊 Fetching real-time quote for ${code} using Puppeteer...`);
 
-    const $ = cheerio.load(response.data);
-
-    // 현재가
-    const price = parseFloat($('.rate_info .blind').first().text().replace(/,/g, ''));
-
-    // 전일대비
-    const changeText = $('.rate_info .blind').eq(1).text().replace(/,/g, '');
-    const change = parseFloat(changeText);
-
-    // 등락률
-    const changePercentText = $('.rate_info .blind').eq(2).text().replace(/,/g, '').replace('%', '');
-    const changePercent = parseFloat(changePercentText);
-
-    // 거래량
-    const volumeText = $('#_nowVal').parent().parent().next().find('td').eq(0).text().replace(/,/g, '');
-    const volume = parseInt(volumeText) || 0;
-
-    if (isNaN(price)) {
-      console.error(`Failed to parse Naver quote for ${code}`);
-      return null;
-    }
+    const quote = await naverFinanceScraper.getStockQuote(code);
 
     return {
-      symbol: code,
-      price,
-      change: change || 0,
-      changePercent: changePercent || 0,
-      volume,
+      symbol: quote.symbol,
+      name: quote.name,
+      price: quote.price,
+      change: quote.change,
+      changePercent: quote.changePercent,
+      volume: quote.volume,
+      open: quote.open,
+      high: quote.high,
+      low: quote.low,
     };
   } catch (error) {
     console.error(`Error fetching Naver quote for ${code}:`, error);
@@ -316,7 +300,7 @@ export async function saveCandleData(
         .insert(stocks)
         .values({
           symbol: code,
-          name: quote?.symbol || code,
+          name: quote?.name || code,
           market: 'KRX',
           currency: 'KRW',
           exchange: 'KOSPI/KOSDAQ',

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-// import { fetchStockQuote, collectRealTimeData } from '@/lib/services/stock-price-service'; // 비활성화 - 속도 개선
+import { fetchStockQuote, collectRealTimeData } from '@/lib/services/stock-price-service';
 import { db } from '@/lib/db';
 import { priceCandles, stocks } from '@/lib/db/schema';
 import { eq, desc, and } from 'drizzle-orm';
@@ -27,17 +27,23 @@ export async function GET(
     const limit = parseInt(searchParams.get('limit') || '100');
     const shouldCollect = searchParams.get('collect') === 'true';
 
-    // 1. 실시간 데이터 수집 (비활성화 - 외부 API 크롤링 실패로 인한 지연 방지)
-    // if (shouldCollect) {
-    //   try {
-    //     await collectRealTimeData(symbol.toUpperCase(), timeframe as any);
-    //   } catch (error) {
-    //     console.error('Error collecting data:', error);
-    //   }
-    // }
+    // 1. 실시간 데이터 수집 (Puppeteer 사용 - 네이버 금융 스크래핑)
+    if (shouldCollect) {
+      try {
+        console.log(`🔄 Collecting real-time data for ${symbol}...`);
+        await collectRealTimeData(symbol.toUpperCase(), timeframe as any);
+      } catch (error) {
+        console.error('Error collecting data:', error);
+      }
+    }
 
-    // 2. 현재 가격 조회 (비활성화 - DB 데이터 사용으로 속도 개선)
-    // const currentQuote = await fetchStockQuote(symbol.toUpperCase());
+    // 2. 현재 가격 조회 (Puppeteer 사용 - 네이버 금융 스크래핑)
+    let currentQuote = null;
+    try {
+      currentQuote = await fetchStockQuote(symbol.toUpperCase());
+    } catch (error) {
+      console.error('Error fetching current quote:', error);
+    }
 
     // 3. 주식 정보 조회 (심볼 정규화 적용)
     const normalizedSymbol = normalizeStockSymbol(symbol);
@@ -62,10 +68,10 @@ export async function GET(
       limit: limit,
     });
 
-    // 5. 현재가는 DB의 최신 캔들 종가 사용 (외부 API 대신)
-    const currentPrice = candles.length > 0
-      ? parseFloat(candles[0].close)
-      : null;
+    // 5. 현재가는 실시간 스크래핑 데이터 우선, 없으면 DB 사용
+    const currentPrice = currentQuote
+      ? currentQuote.price
+      : (candles.length > 0 ? parseFloat(candles[0].close) : null);
 
     return NextResponse.json({
       stock: {
@@ -77,6 +83,15 @@ export async function GET(
         exchange: stock.exchange,
       },
       currentPrice: currentPrice,
+      quote: currentQuote ? {
+        price: currentQuote.price,
+        change: currentQuote.change,
+        changePercent: currentQuote.changePercent,
+        volume: currentQuote.volume,
+        open: currentQuote.open,
+        high: currentQuote.high,
+        low: currentQuote.low,
+      } : null,
       candles: candles.map((c) => ({
         timestamp: c.timestamp,
         open: parseFloat(c.open),
