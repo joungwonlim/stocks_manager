@@ -1,4 +1,4 @@
-import cron from 'node-cron';
+import cron, { ScheduledTask } from 'node-cron';
 import { collectMultipleStocks } from './stock-price-service';
 
 // 관심 종목 리스트 (환경변수나 DB에서 가져올 수 있음)
@@ -21,7 +21,7 @@ const WATCHLIST_SYMBOLS = [
 ];
 
 let isRunning = false;
-let scheduledJobs: cron.ScheduledTask[] = [];
+let scheduledJobs: ScheduledTask[] = [];
 
 /**
  * 1분마다 실행: 1분봉 데이터 수집
