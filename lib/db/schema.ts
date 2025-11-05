@@ -99,6 +99,32 @@ export const technicalIndicators = pgTable("technical_indicators", {
 // AI 분석 및 신호
 // ============================================
 
+// 투자 전략 마스터 데이터
+export const tradingStrategies = pgTable("trading_strategies", {
+  id: serial("id").primaryKey(),
+  code: varchar("code", { length: 50 }).notNull().unique(), // 'value_investing', 'growth_investing' 등
+  nameKo: varchar("name_ko", { length: 100 }).notNull(), // 한글명
+  nameEn: varchar("name_en", { length: 100 }).notNull(), // 영문명
+  category: varchar("category", { length: 50 }).notNull(), // 'fundamental', 'technical', 'portfolio', 'derivatives'
+  description: text("description").notNull(), // 상세 설명
+  keyIndicators: json("key_indicators"), // 관련 지표들 (JSON array)
+
+  // 전략 특성
+  riskLevel: varchar("risk_level", { length: 20 }), // 'low', 'medium', 'high'
+  timeHorizon: varchar("time_horizon", { length: 20 }), // 'short', 'medium', 'long'
+  suitableFor: json("suitable_for"), // 적합한 투자자 유형 (JSON array)
+
+  // 활성화 여부
+  isActive: boolean("is_active").default(true),
+  priority: integer("priority").default(0), // 우선순위 (0-10)
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  categoryIdx: index("strategy_category_idx").on(table.category),
+  activeIdx: index("strategy_active_idx").on(table.isActive, table.priority),
+}));
+
 // Claude AI 분석 결과
 export const aiAnalysis = pgTable("ai_analysis", {
   id: serial("id").primaryKey(),
@@ -116,9 +142,28 @@ export const aiAnalysis = pgTable("ai_analysis", {
   // 추천 사항
   recommendation: varchar("recommendation", { length: 20 }), // 'strong_buy', 'buy', 'hold', 'sell', 'strong_sell'
 
+  // 적용된 전략들 (복수 가능)
+  appliedStrategies: json("applied_strategies"), // [{strategyId, score, reasoning}]
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   stockAnalysisIdx: index("stock_analysis_idx").on(table.stockId, table.timestamp),
+}));
+
+// AI 분석 - 전략 연결 테이블 (Many-to-Many)
+export const aiAnalysisStrategies = pgTable("ai_analysis_strategies", {
+  id: serial("id").primaryKey(),
+  aiAnalysisId: integer("ai_analysis_id").notNull().references(() => aiAnalysis.id),
+  strategyId: integer("strategy_id").notNull().references(() => tradingStrategies.id),
+
+  // 전략 적용 점수 및 근거
+  applicabilityScore: decimal("applicability_score", { precision: 5, scale: 2 }), // 0-100 점
+  reasoning: text("reasoning"), // 해당 전략을 추천한 이유
+  matchedIndicators: json("matched_indicators"), // 부합하는 지표들
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  analysisStrategyIdx: uniqueIndex("analysis_strategy_idx").on(table.aiAnalysisId, table.strategyId),
 }));
 
 // 매매 신호
@@ -423,6 +468,22 @@ export const aiAnalysisRelations = relations(aiAnalysis, ({ one, many }) => ({
     references: [stocks.id],
   }),
   tradingSignals: many(tradingSignals),
+  strategyLinks: many(aiAnalysisStrategies),
+}));
+
+export const tradingStrategiesRelations = relations(tradingStrategies, ({ many }) => ({
+  analysisLinks: many(aiAnalysisStrategies),
+}));
+
+export const aiAnalysisStrategiesRelations = relations(aiAnalysisStrategies, ({ one }) => ({
+  aiAnalysis: one(aiAnalysis, {
+    fields: [aiAnalysisStrategies.aiAnalysisId],
+    references: [aiAnalysis.id],
+  }),
+  strategy: one(tradingStrategies, {
+    fields: [aiAnalysisStrategies.strategyId],
+    references: [tradingStrategies.id],
+  }),
 }));
 
 export const tradingSignalsRelations = relations(tradingSignals, ({ one, many }) => ({
