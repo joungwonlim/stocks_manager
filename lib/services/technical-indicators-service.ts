@@ -361,10 +361,11 @@ export async function calculateAndSaveIndicators(
           });
           savedCount++;
         } catch (error: any) {
-          // 중복 키 에러는 무시
-          if (!error?.message?.includes('duplicate key')) {
+          // 중복 키 에러는 무시 (SQLite: UNIQUE constraint, PostgreSQL: duplicate key)
+          if (!error?.message?.includes('duplicate key') && !error?.message?.includes('UNIQUE constraint')) {
             console.error(`Error saving indicator:`, error);
           }
+          // 중복이면 조용히 무시
         }
       }
     }
