@@ -5,16 +5,20 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { TrendingUp, TrendingDown, DollarSign, Activity, Plus, Search, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, Activity, Plus, Search, CheckCircle2, XCircle, Loader2, Sparkles, Target, AlertCircle, Bell } from "lucide-react";
 import { normalizeStockSymbol } from '@/lib/utils/stock-symbol-mapper';
 
 export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [alertLoading, setAlertLoading] = useState(false);
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
-  // 샘플 데이터 (나중에 실제 DB에서 가져올 데이터)
+  // 샘플 데이터
   const portfolioStats = {
     totalValue: 15420000,
     totalInvested: 12000000,
@@ -25,8 +29,36 @@ export default function DashboardPage() {
   const recentStocks = [
     { symbol: "005930", name: "삼성전자", quantity: 50, avgPrice: 71000, currentPrice: 75000, profit: 200000, profitRate: 5.63 },
     { symbol: "035420", name: "NAVER", quantity: 10, avgPrice: 245000, currentPrice: 268000, profit: 230000, profitRate: 9.39 },
-    { symbol: "AAPL", name: "Apple Inc.", quantity: 20, avgPrice: 175.5, currentPrice: 195.2, profit: 394, profitRate: 11.22 },
   ];
+
+  // AI 분석 실행
+  const handleAIAnalyze = async (symbol: string) => {
+    setAnalyzing(true);
+    setError(null);
+
+    try {
+      console.log(`🤖 AI 분석 시작: ${symbol}`);
+      const aiRes = await fetch(`/api/stocks/${symbol}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeframe: '5m' }),
+      });
+
+      const aiData = await aiRes.json();
+
+      if (!aiRes.ok) {
+        throw new Error(aiData.error || 'AI 분석 실패');
+      }
+
+      setAiAnalysis(aiData);
+      console.log('✅ AI 분석 완료!');
+    } catch (err: any) {
+      console.error('❌ AI 분석 실패:', err);
+      setError(err.message);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   // 주식 분석 실행
   const handleAnalyze = async () => {
@@ -38,13 +70,13 @@ export default function DashboardPage() {
     setAnalyzing(true);
     setError(null);
     setAnalysisResult(null);
+    setAiAnalysis(null);
 
     try {
-      // 1. 주식 이름/심볼 정규화
       const symbol = normalizeStockSymbol(searchQuery);
       console.log(`🔍 검색: ${searchQuery} → ${symbol}`);
 
-      // 2. 주가 데이터 수집
+      // 1. 주가 데이터 수집
       console.log('📊 Step 1: 주가 데이터 수집 중...');
       const priceRes = await fetch(`/api/stocks/${symbol}/price?timeframe=5m&limit=500&collect=true`);
       const priceData = await priceRes.json();
@@ -53,9 +85,7 @@ export default function DashboardPage() {
         throw new Error(priceData.error || '주가 데이터 수집 실패');
       }
 
-      console.log(`✅ Step 1 완료: ${priceData.count}개의 캔들 데이터 수집됨`);
-
-      // 3. 기술적 지표 계산
+      // 2. 기술적 지표 계산
       console.log('📈 Step 2: 기술적 지표 계산 중...');
       const indicatorsRes = await fetch(`/api/stocks/${symbol}/indicators?timeframe=5m&calculate=true&analyze=true`);
       const indicatorsData = await indicatorsRes.json();
@@ -64,7 +94,9 @@ export default function DashboardPage() {
         throw new Error(indicatorsData.error || '기술적 지표 계산 실패');
       }
 
-      console.log(`✅ Step 2 완료: ${indicatorsData.count}개의 지표 계산됨`);
+      // 3. AI 분석
+      console.log('🤖 Step 3: AI 분석 중...');
+      await handleAIAnalyze(symbol);
 
       // 4. 결과 표시
       setAnalysisResult({
@@ -86,10 +118,146 @@ export default function DashboardPage() {
     }
   };
 
-  // Enter 키로도 검색 가능
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       handleAnalyze();
+    }
+  };
+
+  // 알림 생성 - 목표가 도달 시
+  const handleCreatePriceTargetAlert = async () => {
+    if (!aiAnalysis || !aiAnalysis.stock) {
+      setAlertMessage('❌ AI 분석 결과가 없습니다. 먼저 종목을 분석해주세요.');
+      setTimeout(() => setAlertMessage(null), 3000);
+      return;
+    }
+
+    setAlertLoading(true);
+    setAlertMessage(null);
+
+    try {
+      const stockId = aiAnalysis.stock.id;
+      const tradingSignalId = aiAnalysis.signal?.id;
+
+      // 목표가 1, 2, 3에 대한 알림 생성
+      const targets = [
+        { type: 'target_price_1', price: aiAnalysis.signal?.targets?.target1, label: '1차 목표가' },
+        { type: 'target_price_2', price: aiAnalysis.signal?.targets?.target2, label: '2차 목표가' },
+        { type: 'target_price_3', price: aiAnalysis.signal?.targets?.target3, label: '3차 목표가' },
+      ];
+
+      for (const target of targets) {
+        if (target.price) {
+          await fetch('/api/alerts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              stockId,
+              tradingSignalId,
+              alertType: target.type,
+              title: `🎯 ${aiAnalysis.stock.name} ${target.label} 도달!`,
+              message: `${aiAnalysis.stock.name}(${aiAnalysis.stock.symbol})의 ${target.label} ${target.price.toLocaleString()}원에 도달했습니다.`,
+              priority: 'normal',
+            }),
+          });
+        }
+      }
+
+      setAlertMessage('✅ 목표가 알림이 설정되었습니다!');
+      setTimeout(() => setAlertMessage(null), 3000);
+      fetchAlerts(); // 알림 목록 갱신
+    } catch (error: any) {
+      console.error('Alert creation failed:', error);
+      setAlertMessage('❌ 알림 설정에 실패했습니다: ' + error.message);
+      setTimeout(() => setAlertMessage(null), 3000);
+    } finally {
+      setAlertLoading(false);
+    }
+  };
+
+  // 알림 생성 - 매매 신호
+  const handleCreateTradingSignalAlert = async () => {
+    if (!aiAnalysis || !aiAnalysis.stock) {
+      setAlertMessage('❌ AI 분석 결과가 없습니다. 먼저 종목을 분석해주세요.');
+      setTimeout(() => setAlertMessage(null), 3000);
+      return;
+    }
+
+    setAlertLoading(true);
+    setAlertMessage(null);
+
+    try {
+      const stockId = aiAnalysis.stock.id;
+      const tradingSignalId = aiAnalysis.signal?.id;
+
+      // 진입가 알림
+      if (aiAnalysis.signal?.entry_price) {
+        await fetch('/api/alerts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            stockId,
+            tradingSignalId,
+            alertType: 'entry_price',
+            title: `🎯 ${aiAnalysis.stock.name} 진입가 도달!`,
+            message: `${aiAnalysis.stock.name}(${aiAnalysis.stock.symbol})의 진입가 ${aiAnalysis.signal.entry_price.toLocaleString()}원에 도달했습니다.`,
+            priority: 'high',
+          }),
+        });
+      }
+
+      // 손절가 알림
+      if (aiAnalysis.signal?.stop_loss) {
+        await fetch('/api/alerts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            stockId,
+            tradingSignalId,
+            alertType: 'stop_loss',
+            title: `⚠️ ${aiAnalysis.stock.name} 손절가 도달!`,
+            message: `${aiAnalysis.stock.name}(${aiAnalysis.stock.symbol})의 손절가 ${aiAnalysis.signal.stop_loss.toLocaleString()}원에 도달했습니다.`,
+            priority: 'high',
+          }),
+        });
+      }
+
+      setAlertMessage('✅ 매매 신호 알림이 설정되었습니다!');
+      setTimeout(() => setAlertMessage(null), 3000);
+      fetchAlerts(); // 알림 목록 갱신
+    } catch (error: any) {
+      console.error('Alert creation failed:', error);
+      setAlertMessage('❌ 알림 설정에 실패했습니다: ' + error.message);
+      setTimeout(() => setAlertMessage(null), 3000);
+    } finally {
+      setAlertLoading(false);
+    }
+  };
+
+  // 알림 목록 가져오기
+  const fetchAlerts = async () => {
+    try {
+      const res = await fetch('/api/alerts?limit=10&isRead=false');
+      const data = await res.json();
+      if (res.ok) {
+        setAlerts(data.alerts || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch alerts:', error);
+    }
+  };
+
+  // 알림 읽음 표시
+  const markAlertAsRead = async (alertId: number) => {
+    try {
+      await fetch(`/api/alerts/${alertId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isRead: true }),
+      });
+      fetchAlerts();
+    } catch (error) {
+      console.error('Failed to mark alert as read:', error);
     }
   };
 
@@ -100,7 +268,7 @@ export default function DashboardPage() {
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <TrendingUp className="h-6 w-6 text-blue-600" />
-            <h1 className="text-xl font-bold">주식투자관리</h1>
+            <h1 className="text-xl font-bold">주식투자관리 AI</h1>
           </div>
           <nav className="flex gap-4">
             <Link href="/">
@@ -109,23 +277,24 @@ export default function DashboardPage() {
             <Link href="/dashboard">
               <Button variant="ghost">대시보드</Button>
             </Link>
-            <Link href="/test-api">
-              <Button variant="ghost">API 테스트</Button>
-            </Link>
+            <Button variant="ghost" className="gap-2">
+              <Bell className="h-4 w-4" />
+              알림 <span className="bg-red-500 text-white text-xs rounded-full px-2">3</span>
+            </Button>
           </nav>
         </div>
       </header>
 
       <div className="container mx-auto px-4 py-8">
-        {/* 검색 및 분석 섹션 */}
-        <Card className="mb-8">
+        {/* AI 분석 섹션 */}
+        <Card className="mb-8 border-blue-200 bg-gradient-to-br from-blue-50 to-purple-50">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Search className="h-5 w-5" />
-              주식 검색 및 분석
+              <Sparkles className="h-5 w-5 text-blue-600" />
+              AI 주식 분석 (Claude AI)
             </CardTitle>
             <CardDescription>
-              종목명 또는 심볼을 입력하고 "분석" 버튼을 클릭하세요
+              종목을 입력하면 Claude AI가 기술적 지표를 분석하여 매수/매도 추천을 제공합니다
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -133,32 +302,32 @@ export default function DashboardPage() {
               <div className="flex-1">
                 <Input
                   type="text"
-                  placeholder="예: 삼성전자, AAPL, 005930.KS"
+                  placeholder="예: 삼성전자, 005930, NAVER, 035420"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyPress={handleKeyPress}
                   disabled={analyzing}
                   className="text-lg"
                 />
-                <p className="text-sm text-zinc-500 mt-2">
-                  한국 주식: 삼성전자, 네이버, 카카오 등 / 미국 주식: AAPL, MSFT, GOOGL 등
+                <p className="text-sm text-zinc-600 mt-2">
+                  💡 테스트 가능: 삼성전자(005930), SK하이닉스(000660), NAVER(035420), LG화학(051910), 카카오(035720)
                 </p>
               </div>
               <Button
                 onClick={handleAnalyze}
                 disabled={analyzing || !searchQuery.trim()}
-                className="px-8"
+                className="px-8 bg-blue-600 hover:bg-blue-700"
                 size="lg"
               >
                 {analyzing ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    분석 중...
+                    AI 분석 중...
                   </>
                 ) : (
                   <>
-                    <Search className="h-4 w-4 mr-2" />
-                    분석
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    AI 분석
                   </>
                 )}
               </Button>
@@ -166,11 +335,16 @@ export default function DashboardPage() {
 
             {/* 분석 진행 상황 */}
             {analyzing && (
-              <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                <p className="text-sm text-blue-700 flex items-center gap-2">
+              <div className="mt-4 p-4 bg-blue-100 rounded-lg border border-blue-200">
+                <p className="text-sm text-blue-800 flex items-center gap-2 font-medium">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  데이터를 수집하고 분석하는 중입니다...
+                  Claude AI가 주식을 분석하고 있습니다...
                 </p>
+                <div className="mt-2 space-y-1 text-xs text-blue-700">
+                  <div>✓ 주가 데이터 수집</div>
+                  <div>✓ 기술적 지표 계산 (RSI, MACD, 볼린저밴드)</div>
+                  <div className="animate-pulse">→ AI 분석 및 추천 생성 중...</div>
+                </div>
               </div>
             )}
 
@@ -184,239 +358,313 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* 분석 결과 */}
-            {analysisResult && (
+            {/* AI 분석 결과 */}
+            {aiAnalysis && (
               <div className="mt-6 space-y-4">
-                <div className="flex items-center gap-2 text-green-600 font-semibold">
-                  <CheckCircle2 className="h-5 w-5" />
-                  분석 완료 및 DB 저장 확인
+                <div className="flex items-center gap-2 text-green-600 font-semibold text-lg">
+                  <CheckCircle2 className="h-6 w-6" />
+                  AI 분석 완료!
                 </div>
 
-                {/* 주식 정보 */}
-                <Card className="border-green-200">
-                  <CardHeader>
-                    <CardTitle>{analysisResult.stock?.name || analysisResult.symbol}</CardTitle>
+                {/* AI 추천 */}
+                <Card className="border-2 border-green-500">
+                  <CardHeader className="bg-gradient-to-r from-green-50 to-blue-50">
+                    <CardTitle className="flex items-center gap-2">
+                      <Sparkles className="h-5 w-5 text-green-600" />
+                      {aiAnalysis.stock?.name} AI 투자 추천
+                    </CardTitle>
                     <CardDescription>
-                      {analysisResult.stock?.symbol} • {analysisResult.stock?.exchange} • {analysisResult.stock?.currency}
+                      {aiAnalysis.stock?.symbol} • {aiAnalysis.stock?.market || 'KRX'}
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div>
-                        <p className="text-sm text-zinc-600">현재가</p>
-                        <p className="text-2xl font-bold">
-                          {analysisResult.currentPrice?.price ? `$${analysisResult.currentPrice.price.toFixed(2)}` : '-'}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-zinc-600">변동률</p>
+                  <CardContent className="pt-6">
+                    {/* 추천 및 신뢰도 */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                      <div className="text-center p-4 bg-white rounded-lg border-2 border-green-200">
+                        <p className="text-sm text-zinc-600 mb-2">AI 추천</p>
                         <p className={`text-2xl font-bold ${
-                          analysisResult.currentPrice?.changePercent >= 0 ? 'text-green-600' : 'text-red-600'
+                          aiAnalysis.analysis?.recommendation?.includes('buy') ? 'text-green-600' :
+                          aiAnalysis.analysis?.recommendation?.includes('sell') ? 'text-red-600' :
+                          'text-zinc-600'
                         }`}>
-                          {analysisResult.currentPrice?.changePercent >= 0 ? '+' : ''}
-                          {analysisResult.currentPrice?.changePercent?.toFixed(2)}%
+                          {aiAnalysis.analysis?.recommendation === 'strong_buy' ? '🔥 강력 매수' :
+                           aiAnalysis.analysis?.recommendation === 'buy' ? '✅ 매수' :
+                           aiAnalysis.analysis?.recommendation === 'hold' ? '➡️ 보유' :
+                           aiAnalysis.analysis?.recommendation === 'sell' ? '⚠️ 매도' :
+                           aiAnalysis.analysis?.recommendation === 'strong_sell' ? '❌ 강력 매도' :
+                           '➡️ 관망'}
                         </p>
                       </div>
-                      <div>
-                        <p className="text-sm text-zinc-600">수집된 캔들</p>
-                        <p className="text-2xl font-bold text-blue-600">
-                          {analysisResult.candlesCount}개
+
+                      <div className="text-center p-4 bg-white rounded-lg border-2 border-blue-200">
+                        <p className="text-sm text-zinc-600 mb-2">시장 심리</p>
+                        <p className={`text-2xl font-bold ${
+                          aiAnalysis.analysis?.sentiment === 'bullish' ? 'text-green-600' :
+                          aiAnalysis.analysis?.sentiment === 'bearish' ? 'text-red-600' :
+                          'text-zinc-600'
+                        }`}>
+                          {aiAnalysis.analysis?.sentiment === 'bullish' ? '🔥 강세장' :
+                           aiAnalysis.analysis?.sentiment === 'bearish' ? '❄️ 약세장' :
+                           '➡️ 중립'}
                         </p>
                       </div>
-                      <div>
-                        <p className="text-sm text-zinc-600">계산된 지표</p>
+
+                      <div className="text-center p-4 bg-white rounded-lg border-2 border-purple-200">
+                        <p className="text-sm text-zinc-600 mb-2">신뢰도</p>
                         <p className="text-2xl font-bold text-purple-600">
-                          {analysisResult.indicatorsCount}개
+                          {aiAnalysis.analysis?.confidence}%
                         </p>
                       </div>
                     </div>
+
+                    {/* 가격 정보 */}
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                      <div className="p-3 bg-zinc-50 rounded-lg">
+                        <p className="text-xs text-zinc-600 mb-1">현재가</p>
+                        <p className="text-lg font-bold">
+                          {aiAnalysis.signal?.current_price?.toLocaleString()}원
+                        </p>
+                      </div>
+                      <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                        <p className="text-xs text-blue-700 mb-1">추천 매수가</p>
+                        <p className="text-lg font-bold text-blue-700">
+                          {aiAnalysis.signal?.entry_price?.toLocaleString()}원
+                        </p>
+                      </div>
+                      <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                        <p className="text-xs text-red-700 mb-1">손절가</p>
+                        <p className="text-lg font-bold text-red-700">
+                          {aiAnalysis.signal?.stop_loss?.toLocaleString()}원
+                        </p>
+                      </div>
+                      <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                        <p className="text-xs text-green-700 mb-1">1차 목표가</p>
+                        <p className="text-lg font-bold text-green-700">
+                          {aiAnalysis.signal?.targets?.target1?.toLocaleString()}원
+                        </p>
+                      </div>
+                      <div className="p-3 bg-green-100 rounded-lg border border-green-300">
+                        <p className="text-xs text-green-800 mb-1">2차 목표가</p>
+                        <p className="text-lg font-bold text-green-800">
+                          {aiAnalysis.signal?.targets?.target2?.toLocaleString()}원
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* AI 분석 내용 */}
+                    {aiAnalysis.analysis?.analysis && (
+                      <div className="p-4 bg-zinc-50 rounded-lg mb-4">
+                        <p className="text-sm font-medium text-zinc-700 mb-2">📝 AI 분석 내용:</p>
+                        <p className="text-sm text-zinc-700 leading-relaxed whitespace-pre-line">
+                          {aiAnalysis.analysis.analysis}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* 분석 근거 */}
+                    {aiAnalysis.analysis?.reasoning && aiAnalysis.analysis.reasoning.length > 0 && (
+                      <div className="p-4 bg-blue-50 rounded-lg">
+                        <p className="text-sm font-medium text-blue-900 mb-2">💡 분석 근거:</p>
+                        <ul className="space-y-1">
+                          {aiAnalysis.analysis.reasoning.map((reason: string, i: number) => (
+                            <li key={i} className="text-sm text-blue-800 flex items-start gap-2">
+                              <span className="text-blue-600">•</span>
+                              <span>{reason}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* 기대 수익 */}
+                    <div className="mt-4 p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-200">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm text-zinc-600 mb-1">기대 수익률</p>
+                          <p className="text-2xl font-bold text-purple-700">
+                            +{aiAnalysis.signal?.expected_return}%
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-zinc-600 mb-1">위험 수준</p>
+                          <p className={`text-lg font-bold ${
+                            aiAnalysis.signal?.risk_level === 'high' ? 'text-red-600' :
+                            aiAnalysis.signal?.risk_level === 'low' ? 'text-green-600' :
+                            'text-yellow-600'
+                          }`}>
+                            {aiAnalysis.signal?.risk_level === 'high' ? '⚠️ 높음' :
+                             aiAnalysis.signal?.risk_level === 'low' ? '✅ 낮음' :
+                             '⚡ 중간'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-zinc-600 mb-1">투자 기간</p>
+                          <p className="text-lg font-bold text-zinc-700">
+                            {aiAnalysis.signal?.time_horizon === 'short' ? '🏃 단기' :
+                             aiAnalysis.signal?.time_horizon === 'long' ? '🚶 장기' :
+                             '🚴 중기'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 알림 설정 버튼 */}
+                    <div className="mt-4 flex gap-2">
+                      <Button
+                        onClick={handleCreatePriceTargetAlert}
+                        disabled={alertLoading}
+                        className="flex-1 bg-green-600 hover:bg-green-700"
+                      >
+                        {alertLoading ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Bell className="h-4 w-4 mr-2" />
+                        )}
+                        목표가 도달 시 알림 받기
+                      </Button>
+                      <Button
+                        onClick={handleCreateTradingSignalAlert}
+                        disabled={alertLoading}
+                        variant="outline"
+                        className="flex-1"
+                      >
+                        {alertLoading ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Target className="h-4 w-4 mr-2" />
+                        )}
+                        매매 신호 알림 설정
+                      </Button>
+                    </div>
+
+                    {/* 알림 피드백 메시지 */}
+                    {alertMessage && (
+                      <div className={`mt-3 p-3 rounded-lg ${
+                        alertMessage.includes('✅') ? 'bg-green-50 text-green-800 border border-green-200' :
+                        'bg-red-50 text-red-800 border border-red-200'
+                      }`}>
+                        <p className="text-sm font-medium">{alertMessage}</p>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 
                 {/* 기술적 지표 */}
-                {analysisResult.indicators && (
+                {aiAnalysis.indicators && (
                   <Card className="border-purple-200">
                     <CardHeader>
-                      <CardTitle>📊 기술적 지표</CardTitle>
+                      <CardTitle>📊 기술적 지표 상세</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {analysisResult.indicators.rsi14 && (
-                          <div>
-                            <p className="text-sm text-zinc-600">RSI(14)</p>
+                        {aiAnalysis.indicators.rsi && (
+                          <div className="p-3 bg-zinc-50 rounded-lg">
+                            <p className="text-xs text-zinc-600 mb-1">RSI(14)</p>
                             <p className={`text-lg font-bold ${
-                              analysisResult.indicators.rsi14 > 70 ? 'text-red-600' :
-                              analysisResult.indicators.rsi14 < 30 ? 'text-green-600' :
+                              parseFloat(aiAnalysis.indicators.rsi) > 70 ? 'text-red-600' :
+                              parseFloat(aiAnalysis.indicators.rsi) < 30 ? 'text-green-600' :
                               'text-zinc-900'
                             }`}>
-                              {analysisResult.indicators.rsi14.toFixed(2)}
+                              {parseFloat(aiAnalysis.indicators.rsi).toFixed(2)}
                             </p>
-                            <p className="text-xs text-zinc-500">
-                              {analysisResult.indicators.rsi14 > 70 ? '과매수' :
-                               analysisResult.indicators.rsi14 < 30 ? '과매도' : '중립'}
+                            <p className="text-xs text-zinc-500 mt-1">
+                              {parseFloat(aiAnalysis.indicators.rsi) > 70 ? '과매수' :
+                               parseFloat(aiAnalysis.indicators.rsi) < 30 ? '과매도' : '중립'}
                             </p>
                           </div>
                         )}
-                        {analysisResult.indicators.macd && (
-                          <div>
-                            <p className="text-sm text-zinc-600">MACD</p>
-                            <p className="text-lg font-bold">{analysisResult.indicators.macd.toFixed(4)}</p>
+                        {aiAnalysis.indicators.macd && (
+                          <div className="p-3 bg-zinc-50 rounded-lg">
+                            <p className="text-xs text-zinc-600 mb-1">MACD</p>
+                            <p className="text-lg font-bold">{parseFloat(aiAnalysis.indicators.macd).toFixed(2)}</p>
                           </div>
                         )}
-                        {analysisResult.indicators.sma20 && (
-                          <div>
-                            <p className="text-sm text-zinc-600">SMA(20)</p>
-                            <p className="text-lg font-bold">{analysisResult.indicators.sma20.toFixed(2)}</p>
-                          </div>
-                        )}
-                        {analysisResult.indicators.bbUpper && (
-                          <div>
-                            <p className="text-sm text-zinc-600">볼린저 상단</p>
-                            <p className="text-lg font-bold">{analysisResult.indicators.bbUpper.toFixed(2)}</p>
-                          </div>
+                        {aiAnalysis.indicators.bollinger_upper && (
+                          <>
+                            <div className="p-3 bg-zinc-50 rounded-lg">
+                              <p className="text-xs text-zinc-600 mb-1">볼린저 상단</p>
+                              <p className="text-lg font-bold">{parseFloat(aiAnalysis.indicators.bollinger_upper).toFixed(0)}</p>
+                            </div>
+                            <div className="p-3 bg-zinc-50 rounded-lg">
+                              <p className="text-xs text-zinc-600 mb-1">볼린저 하단</p>
+                              <p className="text-lg font-bold">{parseFloat(aiAnalysis.indicators.bollinger_lower).toFixed(0)}</p>
+                            </div>
+                          </>
                         )}
                       </div>
                     </CardContent>
                   </Card>
                 )}
-
-                {/* AI 분석 */}
-                {analysisResult.analysis && (
-                  <Card className="border-yellow-200">
-                    <CardHeader>
-                      <CardTitle>🤖 AI 분석 결과</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">시장 심리:</span>
-                          <span className={`px-3 py-1 rounded-full font-bold ${
-                            analysisResult.analysis.sentiment === 'bullish'
-                              ? 'bg-green-100 text-green-700'
-                              : analysisResult.analysis.sentiment === 'bearish'
-                              ? 'bg-red-100 text-red-700'
-                              : 'bg-gray-100 text-gray-700'
-                          }`}>
-                            {analysisResult.analysis.sentiment === 'bullish' ? '🔥 강세 (상승)' :
-                             analysisResult.analysis.sentiment === 'bearish' ? '❄️ 약세 (하락)' : '➡️ 중립'}
-                          </span>
-                          <span className="text-sm text-zinc-600">
-                            신뢰도: {analysisResult.analysis.strength}%
-                          </span>
-                        </div>
-
-                        {analysisResult.analysis.signals && analysisResult.analysis.signals.length > 0 && (
-                          <div>
-                            <p className="font-medium mb-2">매매 신호:</p>
-                            <ul className="space-y-1">
-                              {analysisResult.analysis.signals.map((signal: string, i: number) => (
-                                <li key={i} className="text-sm text-zinc-700 flex items-start gap-2">
-                                  <span className="text-blue-600">•</span>
-                                  <span>{signal}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* DB 저장 확인 */}
-                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <p className="text-sm text-green-700 font-medium flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4" />
-                    ✅ 데이터베이스 저장 완료
-                  </p>
-                  <ul className="mt-2 text-sm text-green-600 space-y-1">
-                    <li>• 주식 정보 (stocks 테이블)</li>
-                    <li>• 가격 캔들 데이터 (price_candles 테이블) - {analysisResult.candlesCount}개</li>
-                    <li>• 기술적 지표 (technical_indicators 테이블) - {analysisResult.indicatorsCount}개</li>
-                  </ul>
-                </div>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Page Title */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="text-3xl font-bold mb-2">대시보드</h2>
-            <p className="text-zinc-600 dark:text-zinc-400">
-              전체 투자 현황을 한눈에 확인하세요
-            </p>
+        {/* 포트폴리오 통계 */}
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold mb-4">포트폴리오 현황</h2>
+          <div className="grid md:grid-cols-4 gap-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">총 자산 가치</CardTitle>
+                <DollarSign className="h-4 w-4 text-zinc-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  ₩{portfolioStats.totalValue.toLocaleString()}
+                </div>
+                <p className="text-xs text-zinc-600 mt-1">
+                  투자금: ₩{portfolioStats.totalInvested.toLocaleString()}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">총 수익</CardTitle>
+                <TrendingUp className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">
+                  ₩{portfolioStats.totalProfit.toLocaleString()}
+                </div>
+                <p className="text-xs text-green-600 mt-1">
+                  +{portfolioStats.profitRate}%
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">보유 종목</CardTitle>
+                <Activity className="h-4 w-4 text-zinc-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{recentStocks.length}</div>
+                <p className="text-xs text-zinc-600 mt-1">
+                  개의 주식 보유 중
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">수익률</CardTitle>
+                <TrendingUp className="h-4 w-4 text-blue-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-blue-600">
+                  {portfolioStats.profitRate}%
+                </div>
+                <p className="text-xs text-zinc-600 mt-1">
+                  평균 수익률
+                </p>
+              </CardContent>
+            </Card>
           </div>
-          <Link href="/transactions/new">
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" /> 거래 추가
-            </Button>
-          </Link>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid md:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">총 자산 가치</CardTitle>
-              <DollarSign className="h-4 w-4 text-zinc-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                ₩{portfolioStats.totalValue.toLocaleString()}
-              </div>
-              <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">
-                총 투자금: ₩{portfolioStats.totalInvested.toLocaleString()}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">총 수익</CardTitle>
-              <TrendingUp className="h-4 w-4 text-green-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                ₩{portfolioStats.totalProfit.toLocaleString()}
-              </div>
-              <p className="text-xs text-green-600 mt-1">
-                +{portfolioStats.profitRate}%
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">보유 종목</CardTitle>
-              <Activity className="h-4 w-4 text-zinc-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{recentStocks.length}</div>
-              <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">
-                개의 주식 보유 중
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">수익률</CardTitle>
-              <TrendingUp className="h-4 w-4 text-blue-600" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-600">
-                {portfolioStats.profitRate}%
-              </div>
-              <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">
-                평균 수익률
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Holdings Table */}
+        {/* 보유 종목 */}
         <Card>
           <CardHeader>
             <CardTitle>보유 종목</CardTitle>
@@ -436,39 +684,42 @@ export default function DashboardPage() {
                     <th className="text-right py-3 px-4 font-medium">현재가</th>
                     <th className="text-right py-3 px-4 font-medium">평가손익</th>
                     <th className="text-right py-3 px-4 font-medium">수익률</th>
+                    <th className="text-center py-3 px-4 font-medium">액션</th>
                   </tr>
                 </thead>
                 <tbody>
                   {recentStocks.map((stock) => (
-                    <tr key={stock.symbol} className="border-b hover:bg-zinc-50 dark:hover:bg-zinc-900">
+                    <tr key={stock.symbol} className="border-b hover:bg-zinc-50">
                       <td className="py-3 px-4 font-medium">{stock.name}</td>
-                      <td className="py-3 px-4 text-zinc-600 dark:text-zinc-400">{stock.symbol}</td>
+                      <td className="py-3 px-4 text-zinc-600">{stock.symbol}</td>
                       <td className="py-3 px-4 text-right">{stock.quantity}</td>
                       <td className="py-3 px-4 text-right">
-                        {stock.symbol.startsWith('0') ? '₩' : '$'}
-                        {stock.avgPrice.toLocaleString()}
+                        ₩{stock.avgPrice.toLocaleString()}
                       </td>
                       <td className="py-3 px-4 text-right">
-                        {stock.symbol.startsWith('0') ? '₩' : '$'}
-                        {stock.currentPrice.toLocaleString()}
+                        ₩{stock.currentPrice.toLocaleString()}
                       </td>
                       <td className={`py-3 px-4 text-right font-medium ${stock.profit > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {stock.profit > 0 ? '+' : ''}
-                        {stock.symbol.startsWith('0') ? '₩' : '$'}
-                        {stock.profit.toLocaleString()}
+                        {stock.profit > 0 ? '+' : ''}₩{stock.profit.toLocaleString()}
                       </td>
                       <td className={`py-3 px-4 text-right font-medium ${stock.profitRate > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {stock.profitRate > 0 ? (
-                          <span className="flex items-center justify-end gap-1">
-                            <TrendingUp className="h-4 w-4" />
-                            +{stock.profitRate}%
-                          </span>
-                        ) : (
-                          <span className="flex items-center justify-end gap-1">
-                            <TrendingDown className="h-4 w-4" />
-                            {stock.profitRate}%
-                          </span>
-                        )}
+                        <span className="flex items-center justify-end gap-1">
+                          {stock.profitRate > 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+                          {stock.profitRate > 0 ? '+' : ''}{stock.profitRate}%
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setSearchQuery(stock.symbol);
+                            handleAnalyze();
+                          }}
+                        >
+                          <Sparkles className="h-3 w-3 mr-1" />
+                          AI 분석
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -477,6 +728,53 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* 알림 목록 */}
+        {alerts.length > 0 && (
+          <Card className="mt-8 border-orange-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Bell className="h-5 w-5 text-orange-600" />
+                활성 알림 ({alerts.length})
+              </CardTitle>
+              <CardDescription>
+                설정된 알림 목록입니다
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {alerts.map((alert: any) => (
+                  <div
+                    key={alert.id}
+                    className={`p-4 rounded-lg border ${
+                      alert.priority === 'high'
+                        ? 'bg-red-50 border-red-200'
+                        : 'bg-orange-50 border-orange-200'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <p className="font-medium text-zinc-900 mb-1">{alert.title}</p>
+                        <p className="text-sm text-zinc-600">{alert.message}</p>
+                        <p className="text-xs text-zinc-500 mt-2">
+                          {new Date(alert.createdAt).toLocaleString('ko-KR')}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => markAlertAsRead(alert.id)}
+                        className="ml-4"
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

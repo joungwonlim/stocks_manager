@@ -146,7 +146,11 @@ ${candleInputs.slice(-10).map((c, i) =>
     // 6. Claude AI 호출 (환경변수 없으면 Mock 응답)
     let aiResponse;
 
-    if (process.env.ANTHROPIC_API_KEY) {
+    const hasValidApiKey = process.env.ANTHROPIC_API_KEY &&
+                          process.env.ANTHROPIC_API_KEY !== 'your_api_key_here' &&
+                          process.env.ANTHROPIC_API_KEY.startsWith('sk-');
+
+    if (hasValidApiKey) {
       const anthropic = new Anthropic({
         apiKey: process.env.ANTHROPIC_API_KEY,
       });

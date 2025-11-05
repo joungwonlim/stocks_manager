@@ -139,8 +139,8 @@ async function seedMockStocks() {
 
       const basePrice = basePrices[stockData.symbol] || 50000;
 
-      // 3. 5분봉 데이터 생성 (최근 100개 = 약 8시간)
-      const candles5m = generateHistoricalCandles(basePrice, 100, 5);
+      // 3. 5분봉 데이터 생성 (최근 500개 = 약 41시간)
+      const candles5m = generateHistoricalCandles(basePrice, 500, 5);
 
       for (const candle of candles5m) {
         try {
