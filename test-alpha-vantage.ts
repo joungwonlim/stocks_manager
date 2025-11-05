@@ -6,7 +6,12 @@
  * 2. npx tsx test-alpha-vantage.ts
  */
 
-import 'dotenv/config';
+import { config } from 'dotenv';
+import { resolve } from 'path';
+
+// .env.local 파일 로드
+config({ path: resolve(__dirname, '.env.local') });
+
 import alphaVantageService from './lib/services/alpha-vantage-service';
 
 async function testAlphaVantage() {
