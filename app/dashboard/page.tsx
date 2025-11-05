@@ -13,6 +13,7 @@ import dynamic from 'next/dynamic';
 const CandlestickChart = dynamic(() => import('@/components/charts/CandlestickChart'), { ssr: false });
 const TechnicalIndicatorChart = dynamic(() => import('@/components/charts/TechnicalIndicatorChart'), { ssr: false });
 const PortfolioChart = dynamic(() => import('@/components/charts/PortfolioChart'), { ssr: false });
+const PriceComparisonChart = dynamic(() => import('@/components/charts/PriceComparisonChart'), { ssr: false });
 
 export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -480,38 +481,103 @@ export default function DashboardPage() {
                       </div>
                     </div>
 
-                    {/* 가격 정보 */}
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                      <div className="p-3 bg-zinc-50 rounded-lg">
-                        <p className="text-xs text-zinc-600 mb-1">현재가</p>
-                        <p className="text-lg font-bold">
-                          {aiAnalysis.signal?.current_price?.toLocaleString()}원
-                        </p>
-                      </div>
-                      <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                        <p className="text-xs text-blue-700 mb-1">추천 매수가</p>
-                        <p className="text-lg font-bold text-blue-700">
-                          {aiAnalysis.signal?.entry_price?.toLocaleString()}원
-                        </p>
-                      </div>
-                      <div className="p-3 bg-red-50 rounded-lg border border-red-200">
-                        <p className="text-xs text-red-700 mb-1">손절가</p>
-                        <p className="text-lg font-bold text-red-700">
-                          {aiAnalysis.signal?.stop_loss?.toLocaleString()}원
-                        </p>
-                      </div>
-                      <div className="p-3 bg-green-50 rounded-lg border border-green-200">
-                        <p className="text-xs text-green-700 mb-1">1차 목표가</p>
-                        <p className="text-lg font-bold text-green-700">
-                          {aiAnalysis.signal?.targets?.target1?.toLocaleString()}원
-                        </p>
-                      </div>
-                      <div className="p-3 bg-green-100 rounded-lg border border-green-300">
-                        <p className="text-xs text-green-800 mb-1">2차 목표가</p>
-                        <p className="text-lg font-bold text-green-800">
-                          {aiAnalysis.signal?.targets?.target2?.toLocaleString()}원
-                        </p>
-                      </div>
+                    {/* 가격 비교 차트 */}
+                    {aiAnalysis.signal && (
+                      <Card className="mb-6 border-indigo-200">
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2 text-base">
+                            <Target className="h-5 w-5 text-indigo-600" />
+                            가격 목표 분석
+                          </CardTitle>
+                          <CardDescription className="text-xs">
+                            현재가 대비 매수가, 손절가, 목표가 위치를 시각화한 차트
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <PriceComparisonChart
+                            prices={{
+                              currentPrice: aiAnalysis.signal.current_price,
+                              entryPrice: aiAnalysis.signal.entry_price,
+                              stopLoss: aiAnalysis.signal.stop_loss,
+                              target1: aiAnalysis.signal.targets.target1,
+                              target2: aiAnalysis.signal.targets.target2,
+                              target3: aiAnalysis.signal.targets.target3,
+                            }}
+                            height={300}
+                          />
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* 가격 정보 - 퍼센트 추가 */}
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+                      {(() => {
+                        const currentPrice = aiAnalysis.signal?.current_price || 0;
+                        const calculatePercent = (price: number) => {
+                          return ((price - currentPrice) / currentPrice * 100).toFixed(2);
+                        };
+
+                        return (
+                          <>
+                            <div className="p-3 bg-zinc-50 rounded-lg border-2 border-zinc-300">
+                              <p className="text-xs text-zinc-600 mb-1">현재가</p>
+                              <p className="text-lg font-bold">
+                                {currentPrice.toLocaleString()}원
+                              </p>
+                              <p className="text-xs font-medium text-zinc-500 mt-1">
+                                (0.00%)
+                              </p>
+                            </div>
+                            <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                              <p className="text-xs text-blue-700 mb-1">추천 매수가</p>
+                              <p className="text-lg font-bold text-blue-700">
+                                {aiAnalysis.signal?.entry_price?.toLocaleString()}원
+                              </p>
+                              <p className={`text-xs font-medium mt-1 ${
+                                parseFloat(calculatePercent(aiAnalysis.signal?.entry_price || 0)) < 0 ? 'text-blue-600' : 'text-blue-400'
+                              }`}>
+                                ({calculatePercent(aiAnalysis.signal?.entry_price || 0)}%)
+                              </p>
+                            </div>
+                            <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                              <p className="text-xs text-red-700 mb-1">손절가</p>
+                              <p className="text-lg font-bold text-red-700">
+                                {aiAnalysis.signal?.stop_loss?.toLocaleString()}원
+                              </p>
+                              <p className="text-xs font-medium text-red-600 mt-1">
+                                ({calculatePercent(aiAnalysis.signal?.stop_loss || 0)}%)
+                              </p>
+                            </div>
+                            <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                              <p className="text-xs text-green-700 mb-1">1차 목표가</p>
+                              <p className="text-lg font-bold text-green-700">
+                                {aiAnalysis.signal?.targets?.target1?.toLocaleString()}원
+                              </p>
+                              <p className="text-xs font-medium text-green-600 mt-1">
+                                (+{calculatePercent(aiAnalysis.signal?.targets?.target1 || 0)}%)
+                              </p>
+                            </div>
+                            <div className="p-3 bg-green-100 rounded-lg border border-green-300">
+                              <p className="text-xs text-green-800 mb-1">2차 목표가</p>
+                              <p className="text-lg font-bold text-green-800">
+                                {aiAnalysis.signal?.targets?.target2?.toLocaleString()}원
+                              </p>
+                              <p className="text-xs font-medium text-green-700 mt-1">
+                                (+{calculatePercent(aiAnalysis.signal?.targets?.target2 || 0)}%)
+                              </p>
+                            </div>
+                            <div className="p-3 bg-green-200 rounded-lg border border-green-400">
+                              <p className="text-xs text-green-900 mb-1">3차 목표가</p>
+                              <p className="text-lg font-bold text-green-900">
+                                {aiAnalysis.signal?.targets?.target3?.toLocaleString()}원
+                              </p>
+                              <p className="text-xs font-medium text-green-800 mt-1">
+                                (+{calculatePercent(aiAnalysis.signal?.targets?.target3 || 0)}%)
+                              </p>
+                            </div>
+                          </>
+                        );
+                      })()}
                     </div>
 
                     {/* AI 분석 내용 */}
