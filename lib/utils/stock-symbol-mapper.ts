@@ -88,22 +88,22 @@ export function normalizeStockSymbol(input: string, removeExchange: boolean = tr
     return upperInput;
   }
 
-  // 2. 이미 올바른 미국 주식 심볼 형태인 경우 (예: AAPL)
-  if (/^[A-Z]{1,5}$/.test(upperInput)) {
-    return upperInput;
-  }
-
-  // 3. 한국 주식 이름 검색
+  // 2. 한국 주식 이름 검색 (NAVER, 삼성전자 등) - 미국 주식 체크보다 먼저!
   if (KOREAN_STOCK_NAMES[trimmed]) {
     const symbol = KOREAN_STOCK_NAMES[trimmed];
     // .KS, .KQ 제거
     return removeExchange ? symbol.replace(/\.(KS|KQ)$/, '') : symbol;
   }
 
-  // 4. 미국 주식 이름 검색 (대소문자 무시)
+  // 3. 미국 주식 이름 검색 (대소문자 무시)
   const usSymbol = US_STOCK_NAMES[trimmed];
   if (usSymbol) {
     return usSymbol;
+  }
+
+  // 4. 이미 올바른 미국 주식 심볼 형태인 경우 (예: AAPL)
+  if (/^[A-Z]{1,5}$/.test(upperInput)) {
+    return upperInput;
   }
 
   // 5. 그대로 반환 (대문자로)

@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { stocks, priceCandles, aiAnalysis, tradingSignals } from '@/lib/db/schema';
 import { eq, desc } from 'drizzle-orm';
 import { calculateAllIndicators } from '@/lib/services/technical-indicators-service';
+import { normalizeStockSymbol } from '@/lib/utils/stock-symbol-mapper';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,9 +21,12 @@ export async function POST(
     const body = await request.json();
     const { timeframe = '5m', strategies = [] } = body;
 
+    // 심볼 정규화
+    const normalizedSymbol = normalizeStockSymbol(symbol);
+
     // 1. 주식 정보 조회
     const stock = await db.query.stocks.findFirst({
-      where: eq(stocks.symbol, symbol.toUpperCase()),
+      where: eq(stocks.symbol, normalizedSymbol),
     });
 
     if (!stock) {

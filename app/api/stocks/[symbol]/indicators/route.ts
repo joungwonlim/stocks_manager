@@ -4,6 +4,7 @@ import {
   getLatestIndicators,
   analyzeIndicators,
 } from '@/lib/services/technical-indicators-service';
+import { normalizeStockSymbol } from '@/lib/utils/stock-symbol-mapper';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,10 +30,13 @@ export async function GET(
     const shouldCalculate = searchParams.get('calculate') === 'true';
     const shouldAnalyze = searchParams.get('analyze') !== 'false'; // 기본값 true
 
+    // 심볼 정규화
+    const normalizedSymbol = normalizeStockSymbol(symbol);
+
     // 1. 지표 재계산 (옵션)
     if (shouldCalculate) {
       try {
-        await calculateAndSaveIndicators(symbol.toUpperCase(), timeframe);
+        await calculateAndSaveIndicators(normalizedSymbol, timeframe);
       } catch (error) {
         console.error('Error calculating indicators:', error);
         // 계산 실패해도 기존 데이터 조회는 계속 진행
@@ -40,7 +44,7 @@ export async function GET(
     }
 
     // 2. 최신 지표 데이터 조회
-    const indicators = await getLatestIndicators(symbol.toUpperCase(), timeframe, limit);
+    const indicators = await getLatestIndicators(normalizedSymbol, timeframe, limit);
 
     if (indicators.length === 0) {
       return NextResponse.json(

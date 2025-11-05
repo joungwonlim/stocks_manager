@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { priceCandles, stocks } from '@/lib/db/schema';
 import { eq, desc, and } from 'drizzle-orm';
+import { normalizeStockSymbol } from '@/lib/utils/stock-symbol-mapper';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,9 +39,10 @@ export async function GET(
     // 2. 현재 가격 조회 (비활성화 - DB 데이터 사용으로 속도 개선)
     // const currentQuote = await fetchStockQuote(symbol.toUpperCase());
 
-    // 3. 주식 정보 조회
+    // 3. 주식 정보 조회 (심볼 정규화 적용)
+    const normalizedSymbol = normalizeStockSymbol(symbol);
     const stock = await db.query.stocks.findFirst({
-      where: eq(stocks.symbol, symbol.toUpperCase()),
+      where: eq(stocks.symbol, normalizedSymbol),
     });
 
     if (!stock) {
