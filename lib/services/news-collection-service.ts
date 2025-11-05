@@ -186,7 +186,7 @@ export async function collectRssFeed(
         title: item.title.substring(0, 500), // 길이 제한
         content: content.substring(0, 50000), // 50KB 제한
         url: item.link.substring(0, 1000),
-        author: item.creator || item.author || null,
+        author: item.creator || null,
         publishedAt,
         category: item.categories?.[0] || null,
         tags: item.categories || null,
