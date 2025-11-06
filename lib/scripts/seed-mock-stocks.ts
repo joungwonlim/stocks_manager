@@ -50,6 +50,14 @@ const mockStocks = [
     exchange: 'KRX',
     sector: '서비스업',
   },
+  {
+    symbol: '015760',
+    name: '한국전력',
+    market: 'KOSPI',
+    currency: 'KRW',
+    exchange: 'KRX',
+    sector: '전기가스업',
+  },
 ];
 
 /**
@@ -135,6 +143,7 @@ async function seedMockStocks() {
         '035420': 215000, // NAVER
         '051910': 380000, // LG화학
         '035720': 48000, // 카카오
+        '015760': 22000, // 한국전력
       };
 
       const basePrice = basePrices[stockData.symbol] || 50000;
