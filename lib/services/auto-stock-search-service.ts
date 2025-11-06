@@ -3,7 +3,7 @@
  * 종목명으로 네이버 금융에서 종목 코드를 자동으로 검색하는 서비스
  */
 
-import puppeteer from 'puppeteer';
+import { chromium, Browser, Page } from 'playwright';
 
 export interface StockSearchResult {
   name: string;
@@ -13,7 +13,7 @@ export interface StockSearchResult {
 }
 
 class AutoStockSearchService {
-  private browser: any = null;
+  private browser: Browser | null = null;
   private searchCache: Map<string, StockSearchResult> = new Map();
 
   /**
@@ -21,7 +21,7 @@ class AutoStockSearchService {
    */
   async init() {
     if (!this.browser) {
-      this.browser = await puppeteer.launch({
+      this.browser = await chromium.launch({
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
       });
@@ -51,14 +51,14 @@ class AutoStockSearchService {
     }
 
     await this.init();
-    const page = await this.browser.newPage();
+    const page = await this.browser!.newPage();
 
     try {
       console.log(`🔍 Auto-searching stock: ${stockName}`);
 
       // 네이버 금융 검색 페이지
       const searchUrl = `https://finance.naver.com/search/searchList.naver?query=${encodeURIComponent(stockName)}`;
-      await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 10000 });
+      await page.goto(searchUrl, { waitUntil: 'networkidle', timeout: 10000 });
 
       // 검색 결과에서 첫 번째 종목 추출
       const result = await page.evaluate(() => {
