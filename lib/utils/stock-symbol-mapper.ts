@@ -92,6 +92,60 @@ export const US_STOCK_NAMES: Record<string, string> = {
 };
 
 /**
+ * 런타임에 종목 추가 (자동 검색 결과를 매핑 테이블에 추가)
+ */
+export function addStockToMapping(name: string, code: string, market: string) {
+  const exchange = market === 'KOSDAQ' ? '.KQ' : '.KS';
+  const fullCode = `${code}${exchange}`;
+
+  KOREAN_STOCK_NAMES[name] = fullCode;
+  console.log(`✅ Added to mapping: ${name} → ${code} [${market}]`);
+}
+
+/**
+ * 자동 검색으로 종목 찾기 (async 버전)
+ * @param input - 주식 이름
+ * @param removeExchange - .KS, .KQ 제거 여부
+ */
+export async function normalizeStockSymbolWithSearch(
+  input: string,
+  removeExchange: boolean = true
+): Promise<string> {
+  const trimmed = input.trim();
+  const upperInput = trimmed.toUpperCase();
+
+  // 먼저 기존 방식으로 시도
+  const basicResult = normalizeStockSymbol(trimmed, removeExchange);
+
+  // 성공했으면 반환
+  if (basicResult !== upperInput || /^\d{6}/.test(basicResult)) {
+    return basicResult;
+  }
+
+  // 실패했고, 한글이 포함되어 있으면 자동 검색
+  if (/[가-힣]/.test(trimmed)) {
+    console.log(`🔍 Auto-searching unknown stock: ${trimmed}`);
+    try {
+      const { default: autoStockSearchService } = await import('../services/auto-stock-search-service');
+      const result = await autoStockSearchService.searchStock(trimmed);
+
+      if (result) {
+        // 매핑 테이블에 추가
+        addStockToMapping(result.name, result.code, result.market);
+        addStockToMapping(trimmed, result.code, result.market); // 검색어도 추가
+
+        // 코드 반환
+        return removeExchange ? result.code : `${result.code}${result.exchange}`;
+      }
+    } catch (error) {
+      console.error(`❌ Auto-search failed for ${trimmed}:`, error);
+    }
+  }
+
+  return upperInput;
+}
+
+/**
  * 주식 이름 또는 심볼을 정규화된 심볼로 변환
  * @param input - 주식 이름 또는 심볼
  * @param removeExchange - .KS, .KQ 같은 거래소 접미사 제거 여부 (기본값: true)

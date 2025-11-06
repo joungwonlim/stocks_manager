@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { TrendingUp, TrendingDown, DollarSign, Activity, Plus, Search, CheckCircle2, XCircle, Loader2, Sparkles, Target, AlertCircle, Bell, BarChart3 } from "lucide-react";
-import { normalizeStockSymbol } from '@/lib/utils/stock-symbol-mapper';
+import { normalizeStockSymbol, normalizeStockSymbolWithSearch } from '@/lib/utils/stock-symbol-mapper';
 import dynamic from 'next/dynamic';
 
 // 차트 컴포넌트를 동적 import (SSR 방지)
@@ -106,8 +106,9 @@ export default function DashboardPage() {
     setAiAnalysis(null);
 
     try {
-      const symbol = normalizeStockSymbol(searchQuery);
-      console.log(`🔍 검색: ${searchQuery} → ${symbol}`);
+      console.log(`🔍 검색 시작: ${searchQuery}`);
+      const symbol = await normalizeStockSymbolWithSearch(searchQuery);
+      console.log(`✅ 종목 코드 찾기 완료: ${searchQuery} → ${symbol}`);
 
       // 1. 주가 데이터 수집
       console.log('📊 Step 1: 주가 데이터 수집 중...');
